@@ -269,7 +269,7 @@ typedef struct {
 #define SOFTWARE_OVP_VCAP 20.0f //最大电容组充电电压，电容组过压保护
 #define SOFTWARE_OVP_RECOVER_VCAP 19 //电容组过压保护恢复阈值，必须比上面的数值小
 
-#define SOFTWARE_UVP_VCAP 7.0f  //最小电容组放电截至电压，这里设定为7V。
+#define SOFTWARE_UVP_VCAP 6.0f  //最小电容组放电截至电压，这里设定为6V。
 //是因为电容组快没电的时候，需要迟滞一段时间才会进入欠压保护，避免瞬时的大功率导致的电容压降误触发欠压保护。
 #define SOFTWARE_UVP_RECOVER_VCAP 10  //电容组欠压保护恢复阈值，必须比上面的数值大
 
@@ -286,7 +286,7 @@ typedef struct {
 #define SOFTWARE_DISCHARGE_OCP_RECOVER_ICAP -18 //电容组过流保护恢复阈值，必须比上面的数值小（电流是矢量，所以-18比-20小）
 
 #define SOFTWARE_OTP_MOS 100 //MOS过温保护。PCB板子耐温度高一点，不会有事
-#define SOFTWARE_OTP_RECOVER_MOS 70 //MOS过温保护恢复阈值，必须比上面的数值小
+#define SOFTWARE_OTP_RECOVER_MOS 80 //MOS过温保护恢复阈值，必须比上面的数值小
 
 #define SOFTWARE_OTP_CAP 70 //电容组过温保护。电容组高温寿命会衰减，建议不要继续使用了（虽然不知道影响有多大）
 #define SOFTWARE_OTP_RECOVER_CAP 50 //电容组过温保护恢复阈值，必须比上面的数值小
@@ -311,6 +311,11 @@ typedef struct {
 
 #endif
 
+#define SUPERCAP_DCR_COMPENSATION	//想要关闭就注释掉这个宏定义
+//电容组DCR补偿，用于计算剩余能量的时候，补偿一下内阻产生的压降，从而展示更真实的剩余能量
+//差不多就是，电容组大电流放电的时候，由于内阻的原因，对外的电压不等于其开路时的电压，会被内阻分压掉一部分，
+//所以这个功能的目的是在电容组大电流放电的时候，避免让回读的能量突然减少一大半的作用，仅仅是为了看起来更舒服！！
+#define SUPERCAP_DCR 0.1f	//超级电容内阻，单位Ω，我这边测出来的超级电容内阻在100mR左右
 
 #define SAFE_CHARGE_ICAP 10  //电容组充电安全电流
 //测试发现，我所用的超级电容组，从0V开始10A恒流充电到满电（电流小于0.1A），然后100W恒功率放电到1V，连续循环10次，电容组温升50°C左右
