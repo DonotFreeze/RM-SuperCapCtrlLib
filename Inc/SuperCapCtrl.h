@@ -250,7 +250,7 @@ typedef struct {
 #define HARDWARE_OVP_VBAT 35  //电池端口最大电压，长时间超过这个电压会导致TVS爆炸
 
 #define SOFTWARE_UVP_BAT 19 //电池欠压保护阈值，电池低于这个电压的时候，就认为电池快要没电了，超电会无法使用
-#define PBAT_POWER_LOSS 10   //电池功率误差补偿，通常包含线损和功率误差的补偿
+#define PBAT_POWER_LOSS 5   //电池功率误差补偿，通常包含线损和功率误差的补偿
 
 #define SAFE_CHARGE_ICAP 5  //电容组充电安全电流，这个是根据超级电容手册中的额定电流来决定的
 #define SAFE_CHARGE_VCAP 10 //当电容电压过低时，必须要等待电容充电超过这个电压才会允许使用超级电容
@@ -260,7 +260,7 @@ typedef struct {
 #define PMOS_OFF_CURRENT 0.5f //当底盘流过的电流小于这个值时，PMOS关闭，作为机器人死亡的判断依据，起到底盘断电的作用
 #define PMOS_ON_CURRENT 1 
 
-#define TRICKLE_CHARGE_CURRENT_CAP 0.3f //涓流电流，充电的时候，使用这个电流来判断是否关闭超电
+#define TRICKLE_CHARGE_CURRENT_CAP 0.5f //涓流电流，充电的时候，使用这个电流来判断是否关闭超电
 
 #define SUPERCAP_AVAILABLE_VOLTAGE  (SOFTWARE_OVP_VCAP - SOFTWARE_UVP_VCAP) //电容组可用电压范围，用于粗略计算电容组的能量百分比
 /*

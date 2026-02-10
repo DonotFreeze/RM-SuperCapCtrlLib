@@ -1,7 +1,7 @@
 /**********************************************************************************************
- * 超级电容功率控制库：V1.1.2452
+ * 超级电容功率控制库：V1.1.2504
  * 代码建立日期：2024年4月28日
- * 最后修改日期：2024年12月29日
+ * 最后修改日期：2025年1月26日
  * 编码格式：GB2312
  * 作者：某桂工的魔法电容使者
  * 
@@ -127,8 +127,6 @@ float Pcap        = 0; // 环路计算中间量，电容端口功率
 float Pbat        = 0; // 环路计算中间量，电池端口功率
 float P_ChargeCap = 0; // 电容充电时候设定的功率
 
-uint8_t BatPower;     // 裁判系统电源管理模块Chassis口功率，用来计算给电控发回去的，经过均值滤波
-int SuperCapPower;    // 超级电容功率，经过均值滤波
 
 uint32_t PMOS_OffDelay = 0; //PMOS关断延迟
 
@@ -152,7 +150,7 @@ void Power_Loop_Parameter_Init(void){
     sStateBit.UVP_Cap_bit     = 0;
     sStateBit.OTP_MOS_bit     = 0;
     sStateBit.OTP_CAP_bit     = 0;
-    sStateBit.OCP_bit     = 0;
+    sStateBit.OCP_bit         = 0;
     sStateBit.OVP_Bat_bit     = 0;
 
     sPID_buck_V.Kp                  = PID_BUCK_V_KP;
@@ -253,17 +251,32 @@ void ADC_Convert_To_Reality(void){
 */
 // 这个函数是将功率计算出来
 void Power_Calculations(void){
-    BatPower      = Ibat * Vbat;
-    SuperCapPower = Vcap * Icap;
+    float Vbat_AVG =0;
+    float Vcap_AVG =0;
+    float Ibat_AVG =0;
+    float Icap_AVG =0;
+
+    uint8_t BatPower;
+    int SuperCapPower;
+
+    Vbat_AVG = sADC_Value_AVG.Vbat * sADC_Fit.Vbat_A + sADC_Fit.Vbat_B;
+    Vcap_AVG = sADC_Value_AVG.Vcap * sADC_Fit.Vcap_A + sADC_Fit.Vcap_B;
+
+    Ibat_AVG = sADC_Value_AVG.Ibat * sADC_Fit.Ibat_A + sADC_Fit.Ibat_B;
+    Icap_AVG = sADC_Value_AVG.Icap * sADC_Fit.Icap_A + sADC_Fit.Icap_B;
+
+    BatPower      = Ibat_AVG * Vbat_AVG;
+    SuperCapPower = Vcap_AVG * Icap_AVG;
+
     if (sStateBit.Charge_bit) {
-        sCAN_TX_data.ChassisPower = BatPower; // 充电的时候底盘消耗的总功率（电机+电容充电）就是电池功率啦
+        sCAN_TX_data.ChassisPower = BatPower +PBAT_POWER_LOSS; // 充电的时候底盘消耗的总功率（电机+电容充电）就是电池功率啦，+上电池功率损失是一个补偿。
 
     } else if (!sStateBit.Charge_bit) {
         // 放电的时候，电流是负的，所以他算出来的放电功率也是负的
         // 电池功率 - 放电功率（负的），负负的正，总功率就是|电容放电功率| + |电池功率|。虽然上面的也是剪掉，但是我这样区分来写更清楚一点。
         if ((BatPower - SuperCapPower) < 250) {
             // 限制大小防止上溢
-            sCAN_TX_data.ChassisPower = BatPower - SuperCapPower;
+            sCAN_TX_data.ChassisPower = BatPower - SuperCapPower + PBAT_POWER_LOSS;
         } else {
             sCAN_TX_data.ChassisPower = 250;
         }
@@ -421,14 +434,14 @@ void State_Change(void){
  * 这里使用if是因为写起来比较方便，同时可以拥有优先级判断，能够保证所有保护均会生效。
  */
 void Power_Loop(){
-    if (sStateBit.SoftStart_bit) {
+    if (sStateBit.CAN_Offline_bit) {
+        // CAN离线
+        CAN_Offline_Loop();
+    } else if (sStateBit.SoftStart_bit) {
         // 软起动
         sCAN_TX_data.SuperCapReady = 0;
         sCAN_TX_data.SuperCapState = SOFRSTART_PROTECTION;
         Soft_Start_Loop();
-    } else if (sStateBit.CAN_Offline_bit) {
-        // CAN离线
-        CAN_Offline_Loop();
     } else if (sStateBit.OCP_bit) {
         // 过流保护，也是短路保护
         // 过流不会CC，只会直接关断。
@@ -879,7 +892,7 @@ void Discharge_Loop(void){
     Loop_Competition_Boost(PID_PowerLoopOut, PID_VoltageLoopOut, &TIM1_PWM2_Comapre);
 
     // 这里是防止某些电控逻辑错误导致的超电过充保护。
-    Hysteresis_Comparator(Vcap, 21, 19, &VcapDischargeOVPEgde);
+    Hysteresis_Comparator(Vcap, SOFTWARE_OVP_VCAP + 1, SOFTWARE_OVP_VCAP - 1, &VcapDischargeOVPEgde);
     if (VcapDischargeOVPEgde == RISING) {
 
         PID_Preload_Integral(&sPID_buck_V, Vbat);
@@ -1131,6 +1144,7 @@ void ADC_Curve_Fitting(void){
         }
     }
 }
+
 
 uint32_t ADC_SUM_CNT = 0;//中间计数变量
 /**
