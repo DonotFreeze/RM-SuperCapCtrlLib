@@ -1,5 +1,18 @@
 # 更新日志
 
+## [1.1.2508] - 2025-3-02
+
+> 此版本为2025赛季高校联盟赛广西站所使用的代码。
+
+## 已知的问题
+
+* 在放电的时候被杀死，有可能会出现PMOS无法关断的现象，建议电控发送DISABLE来解决。
+* 进入CAP_Undervoltage_Protection_Loop的时候，可能会出现无法充电的现象，可以通过小幅度移动，让底盘流经一定的电流来解决。
+
+### 变更
+
+* code-workspace中的"EIDE.SourceTree.AutoSearchIncludePath"与"EIDE.SourceTree.AutoSearchObjFile"的值改为了true，确保编译器能自动搜索头文件。
+
 ## [1.1.2504] - 2025-1-26
 
 ### 新增
