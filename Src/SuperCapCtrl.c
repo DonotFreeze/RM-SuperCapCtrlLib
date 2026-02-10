@@ -1,7 +1,7 @@
 /**********************************************************************************************
- * 超级电容功率控制库：V1.1.2451
+ * 超级电容功率控制库：V1.1.2452
  * 代码建立日期：2024年4月28日
- * 最后修改日期：2024年12月19日
+ * 最后修改日期：2024年12月29日
  * 编码格式：GB2312
  * 作者：某桂工的魔法电容使者
  * 
@@ -59,7 +59,13 @@ const ADC_Fit_ParametersTypeDef csADC_Fit_Parameters[10] = {
     {0x003B0057, 0x54315005, 0x20333830, 0.0095f, 0.0173f, 0.0068f, 0.0461f, 0.0036f, 0.0360f, 0.0123f, -33.496f},
     {0x003C0022, 0x54315005, 0x20333830, 0.0094f, 0.0175f, 0.0068f, 0.0460f, 0.0036f, 0.0360f, 0.0123f, -33.496f},
     {0x003B006D, 0x54315005, 0x20333830, 0.0095f, 0.0173f, 0.0068f, 0.0461f, 0.0036f, 0.0360f, 0.0123f, -33.496f},
-    {0x003D0022, 0x54315005, 0x20333830, 0.0095f, 0.0173f, 0.0068f, 0.0461f, 0.0036f, 0.0360f, 0.0123f, -33.496f}
+    {0x003D0022, 0x54315005, 0x20333830, 0.0095f, 0.0173f, 0.0068f, 0.0461f, 0.0036f, 0.0360f, 0.0123f, -33.496f},
+    {0x004F0051, 0x484E5006, 0x20353031, 0.0096f, 0.0732f, 0.0068f, 0.0501f, 0.0040f, 0.1937f, 0.0123f, -33.372f},
+    {0x00230060, 0x484E5004, 0x20353031, 0.0095f, 0.0349f, 0.0068f, 0.0595f, 0.0042f, 0.1252f, 0.0129f, -34.796f},
+    {0x00250045, 0x484E5004, 0x20353031, 0.0095f, 0.0793f, 0.0068f, 0.0441f, 0.0040f, 0.1331f, 0.0129f, -34.918f},
+    {0x001B0051, 0x484E5004, 0x20353031, 0.0095f, 0.0476f, 0.0067f, 0.0569f, 0.0041f, 0.1250f, 0.0128f, -34.728f},
+    {0x0023005B, 0x484E5004, 0x20353031, 0.0095f, 0.0731f, 0.0068f, 0.0180f, 0.0041f, 0.1517f, 0.0128f, -34.490f},
+    {0x001E0044, 0x484E5004, 0x20353031, 0.0095f, 0.0631f, 0.0068f, 0.0413f, 0.0042f, 0.2127f, 0.0127f, -34.627f},
     };
 
 // 初始化之后，ADC的校拟合参数就会被传入这个结构体，也就是在代码中会调用的数据。
@@ -219,7 +225,6 @@ void A_Timing_Ranking_Idea(void){
 
     ADC_Value_AVG_Compute(DIV128); // 运行频率：100K/128 = 781hz
 
-    // 这里用switch也行，只是我更喜欢用if
     if ((TimingCNT & DIV128) == 1) Power_Calculations();        // 运行频率：100K/128 = 781hz
     if ((TimingCNT & DIV128) == 2) Can_SendMess(&sCAN_TX_data); // 运行频率：100K/128 = 781hz
     // 计算平均值、功率计算、CAN发送。数据更新将以最慢的那个为准。
@@ -824,11 +829,11 @@ void Charge_Loop(void){
     TIM1_PWM2_DISBREAK;
     //充电的时候就一直打开PWM，不需要关闭。
 
-    // 充电的时候，只会有两种情况，电池电流会掉到0.5A以下
+    // 充电的时候，只会有两种情况，电池电流会很小
     // 一是超级电容充满电了，处于涓流状态
     // 二是超级电容充电的时候，突然死掉，底盘断电了
     // 充满电的时候，电流很小，就算把PMOS关掉，使用体二极管进行涓流充电，也不会产生太大的损耗。
-    Hysteresis_Comparator(Ibat ,PMOS_ON_CURRENT ,PMOS_OFF_CURRENT , &IbatPMOSOffEdge);
+    Hysteresis_Comparator(Ibat ,PMOS_ON_CURRENT ,TRICKLE_CHARGE_CURRENT_CAP , &IbatPMOSOffEdge);
     if (IbatPMOSOffEdge == FALLING) {
         PMOS_OffDelay++;
         if (PMOS_OffDelay >= COUNT_TO_100MS_ON_100Khz) {
@@ -838,7 +843,7 @@ void Charge_Loop(void){
         }
     }else {
         PMOS_OffDelay =0;
-        //就算电流超过0.5A也不打开PMOS了，只有进去其他环路的时候才会打开PMOS。
+        //就算电流变大也不打开PMOS了，只有进去其他环路的时候才会打开PMOS。
     }
 
     // 清除放电环路的PI参数和状态，让他切换过去的时候会进行积分预加载。
@@ -981,6 +986,8 @@ void PMOS_Off(void){
 uint32_t LED_Refresh_CNT = 0; // 中间变量，用于同步灯光闪烁
 /**
  * LED刷新函数，刷新频率大概为12Hz
+ * 如果LED灯没亮，说明程序卡在初始化校准了
+ * 但凡有一个LED灯在闪烁，都说明处于保护状态
  */
 void LED_Refresh(void){
     LED_Refresh_CNT++;
@@ -1112,14 +1119,17 @@ void Can_SendMess(CAN_TransmitDataTypeDef *TX_temp){
  * 这个函数将带有96位UID的结构体数组与STM32出厂自带的唯一UID进行对比
  * 如果UID匹配则使用对应的ADC拟合参数对ADC采样值进行转换。
  */
-uint8_t ADC_Curve_Fitting(void){
-    for (uint8_t i = 0; i < 10; i++) {
-        if (!memcmp((const void *)UID_BASE, &csADC_Fit_Parameters[i], 12)) {
-            sADC_Fit = csADC_Fit_Parameters[i];
-            return 0;
+void ADC_Curve_Fitting(void){
+    LED_CHASSIS_OFF;
+    LED_CAP_OFF;
+    while(1){
+        for (uint8_t i = 0; i < 10; i++) {
+            if (!memcmp((const void *)UID_BASE, &csADC_Fit_Parameters[i], 12)) {
+                sADC_Fit = csADC_Fit_Parameters[i];
+                return;
+            }
         }
     }
-    return 1;
 }
 
 uint32_t ADC_SUM_CNT = 0;//中间计数变量

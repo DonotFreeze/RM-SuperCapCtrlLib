@@ -196,7 +196,7 @@ typedef struct {
 
 //Boost工作模式下的最大和最小占空比（最大最小PID输出）
 #define BOOST_DUTY_COMPARE_MAX 23000
-#define BOOST_DUTY_COMPARE_MIN 1400
+#define BOOST_DUTY_COMPARE_MIN 1000
 
 //ADC采样NTC热敏电阻的拟合参数，采用二项拟合。
 //其实二项拟合效果不算太好，超过50度会偏大，小于50度又偏小。如果使用三项拟合基本就与实际一致了。
@@ -208,8 +208,8 @@ typedef struct {
 ------------------------------------------------------------------------------------------------------------------------------------------
 */
 //CAN通信ID
-#define CAN_SUPERCAP_ID 0x100
-#define CAN_C_BOARD_ID 0x001
+#define CAN_SUPERCAP_ID 0x100 //电控发数据给超电使用的ID
+#define CAN_C_BOARD_ID 0x001  //超电发数据给电控使用的ID
 #define CAN_TEST_ID 0x255
 
 /*
@@ -260,7 +260,7 @@ typedef struct {
 #define PMOS_OFF_CURRENT 0.5f //当底盘流过的电流小于这个值时，PMOS关闭，作为机器人死亡的判断依据，起到底盘断电的作用
 #define PMOS_ON_CURRENT 1 
 
-#define TRICKLE_CHARGE_CURRENT_CAP 0.2f //
+#define TRICKLE_CHARGE_CURRENT_CAP 0.3f //涓流电流，充电的时候，使用这个电流来判断是否关闭超电
 
 #define SUPERCAP_AVAILABLE_VOLTAGE  (SOFTWARE_OVP_VCAP - SOFTWARE_UVP_VCAP) //电容组可用电压范围，用于粗略计算电容组的能量百分比
 /*
@@ -272,7 +272,7 @@ extern uint16_t ADC2Value[3];
 
 
 
-uint8_t ADC_Curve_Fitting(void);
+void ADC_Curve_Fitting(void);
 void FDCAN_Filter_Init(void);
 void Power_Loop_Parameter_Init(void);
 void A_Timing_Ranking_Idea(void);
