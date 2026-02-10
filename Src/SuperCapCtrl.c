@@ -1,7 +1,7 @@
 /**********************************************************************************************
- * 超级电容功率控制库：V1.2.2519
+ * 超级电容功率控制库：V1.2.2519-beta
  * 代码建立日期：2024年4月13日
- * 最后修改日期：2025年5月6日
+ * 最后修改日期：2025年7月19日
  * 编码格式：GB2312
  * CubeMX版本：6.12.0
  * STM32G4固件包版本：1.6.1
@@ -59,6 +59,7 @@ AnomalyDetectionTypeDef sOTPcapConfig = {0};
 
 // 滞回比较器的状态存储变量
 ComparatorStateTypeDef VcapUVPEdge = RISING;
+ComparatorStateTypeDef PbatOPLEdge = FALLING;    //超电没电之后，超级电容无法补偿超出功率的时候，认为超电没电了
 
 ComparatorStateTypeDef IcapAutoLoopEgde = FALLING;
 ComparatorStateTypeDef VcapAutoLoopEgde = FALLING;
@@ -201,10 +202,6 @@ inline void A_Timing_Ranking_Idea(void){
 }
 
 
-void Self_Checking(void){
-
-}
-
 
 inline void Free_Loop(void){
 
@@ -296,7 +293,7 @@ void Power_Loop(){
     } else if (sStateBit.CAN_Offline_bit) {
         // CAN离线
         sCAN_TX_data.SuperCapReady = UNREADY;
-        sCAN_TX_data.SuperCapState = SOFRSTART_PROTECTION;
+        sCAN_TX_data.SuperCapState = CAN_OFFLINE;
         CAN_Offline_Loop();
     } else if (sStateBit.SoftStart_bit) {
         // 软起动
@@ -376,8 +373,15 @@ void Soft_Start_Loop(void){
         PID_Clear_Integral(&sPID_AutomaticCompensation);
     }
 
-    // 第一次上电的时候需要充电到5V以上才会退出缓启动，然后进入欠压保护。
-    if (Vcap > SOFTSTART_CHARGE_VCAP) {
+    // 第一次上电的时候需要充电到5V以上才会退出缓启动，然后进入欠压保护，如果此时电压大于10V，则直接可以运行。
+    if (Vcap > SAFE_CHARGE_VCAP){
+        SaftChargeOutDelay++;
+        if (SaftChargeOutDelay >= COUNT_TO_1S_ON_100Khz) {
+            sStateBit.SoftStart_bit = 0;
+            sStateBit.UVP_Cap_bit   = 0;
+            SaftChargeOutDelay      = 0;
+        }
+    }else if (Vcap > SOFTSTART_CHARGE_VCAP) {
         SaftChargeOutDelay++;
         if (SaftChargeOutDelay >= COUNT_TO_1S_ON_100Khz) {
             sStateBit.SoftStart_bit = 0;
@@ -638,6 +642,7 @@ void Over_Temperature_Protect_Loop(void){
  * sCAN_TX_data.SuperCapState = 0
  */
 uint32_t UVP_CapDelay =0;
+uint32_t OPL_batDelay =0;
 void Automatic_Power_Compensation_Loop(void){
 
     Pbat = Vbat * Ibat;
@@ -699,13 +704,32 @@ void Automatic_Power_Compensation_Loop(void){
     // 因为超电没电只存在两种情况，一种是第一次上电，另一种是放电的时候放完了
     // 前者会在上电的时候进行判断，这里是后者，只会在这里进行判断
     Hysteresis_Comparator(Vcap ,SOFTWARE_UVP_VCAP + 2 ,SOFTWARE_UVP_VCAP ,&VcapUVPEdge);
+    Hysteresis_Comparator(Pbat ,sCAN_RX_data.PowerLimint + 100, sCAN_RX_data.PowerLimint , &PbatOPLEdge);
     if (VcapUVPEdge == FALLING) {
         UVP_CapDelay++;
+        if(PbatOPLEdge == RISING){
+            OPL_batDelay ++;
+            if (OPL_batDelay >= COUNT_TO_200MS_ON_100Khz) {
+                //这里要判断超电没电之后是否超功率，如果超功率+100W，200MS就进入保护。
+                sStateBit.Enable_bit  = 0;
+                sStateBit.UVP_Cap_bit = 1;
+                OPL_batDelay          = 0;
+                UVP_CapDelay          = 0;
+                PID_Clear_Integral(&sPID_boost_V);
+                PID_Clear_Integral(&sPID_buck_V);
+                PID_Clear_Integral(&sPID_buck_I);
+                PID_Clear_Integral(&sPID_buck_I_UVP);
+                PID_Clear_Integral(&sPID_AutomaticCompensation);
+            }
+        }else if(PbatOPLEdge == FALLING){
+            OPL_batDelay = 0;
+        }
         if (UVP_CapDelay >= COUNT_TO_500MS_ON_100Khz) {
             // 迟滞500ms才会确认超电已经欠压，防止瞬时电流引起的电压跌落导致误触发欠压保护
             sStateBit.Enable_bit  = 0;
             sStateBit.UVP_Cap_bit = 1;
             UVP_CapDelay          = 0;
+            OPL_batDelay          = 0;
             PID_Clear_Integral(&sPID_boost_V);
             PID_Clear_Integral(&sPID_buck_V);
             PID_Clear_Integral(&sPID_buck_I);
@@ -715,6 +739,7 @@ void Automatic_Power_Compensation_Loop(void){
     } else if(VcapUVPEdge == RISING) {
         // 不欠压就清零计数。
         UVP_CapDelay = 0;
+        OPL_batDelay = 0;
     }
 
 }
@@ -1270,22 +1295,22 @@ void ADC_Convert_To_Reality(void){
 */
 void Temperature_Calculations(void){
 
-#ifdef PLUS
-    Tmos = NTC3950_100K_RH_47K_Fitting_A * log(sADC_Value_AVG.Tmos) + NTC3950_100K_RH_47K_Fitting_B;
-    Tcap = NTC3950_100K_RH_47K_Fitting_A * log(sADC_Value_AVG.Tcap) + NTC3950_100K_RH_47K_Fitting_B;
+    #ifdef PLUS
+        Tmos = NTC3950_100K_RH_47K_Fitting_A * log(sADC_Value_AVG.Tmos) + NTC3950_100K_RH_47K_Fitting_B;
+        Tcap = NTC3950_100K_RH_47K_Fitting_A * log(sADC_Value_AVG.Tcap) + NTC3950_100K_RH_47K_Fitting_B;
 
-#endif
+    #endif
 
-#ifdef LITE
-    Tmos =(NTC3950_100K_RL_12K_Fitting_A * sADC_Value_AVG.Tmos *sADC_Value_AVG.Tmos *sADC_Value_AVG.Tmos 
-    + NTC3950_100K_RL_12K_Fitting_B * sADC_Value_AVG.Tmos *sADC_Value_AVG.Tmos
-    + NTC3950_100K_RL_12K_Fitting_C * sADC_Value_AVG.Tmos + NTC3950_100K_RL_12K_Fitting_D );
+    #ifdef LITE
+        Tmos =(NTC3950_100K_RL_12K_Fitting_A * sADC_Value_AVG.Tmos *sADC_Value_AVG.Tmos *sADC_Value_AVG.Tmos 
+        + NTC3950_100K_RL_12K_Fitting_B * sADC_Value_AVG.Tmos *sADC_Value_AVG.Tmos
+        + NTC3950_100K_RL_12K_Fitting_C * sADC_Value_AVG.Tmos + NTC3950_100K_RL_12K_Fitting_D );
 
-    Tcap =(NTC3950_100K_RL_12K_Fitting_A * sADC_Value_AVG.Tcap *sADC_Value_AVG.Tcap *sADC_Value_AVG.Tcap 
-    + NTC3950_100K_RL_12K_Fitting_B * sADC_Value_AVG.Tcap *sADC_Value_AVG.Tcap
-    + NTC3950_100K_RL_12K_Fitting_C * sADC_Value_AVG.Tcap + NTC3950_100K_RL_12K_Fitting_D);
+        Tcap =(NTC3950_100K_RL_12K_Fitting_A * sADC_Value_AVG.Tcap *sADC_Value_AVG.Tcap *sADC_Value_AVG.Tcap 
+        + NTC3950_100K_RL_12K_Fitting_B * sADC_Value_AVG.Tcap *sADC_Value_AVG.Tcap
+        + NTC3950_100K_RL_12K_Fitting_C * sADC_Value_AVG.Tcap + NTC3950_100K_RL_12K_Fitting_D);
 
-#endif
+    #endif
 
 }
 
@@ -1300,41 +1325,48 @@ float Icap_AVG =0;
 void Power_Calculations(void){
 
 
-Vbat_AVG = sADC_Value_AVG.Vbat * sADC_Fit.Vbat_A + sADC_Fit.Vbat_B;
-Vcap_AVG = sADC_Value_AVG.Vcap * sADC_Fit.Vcap_A + sADC_Fit.Vcap_B;
+    Vbat_AVG = sADC_Value_AVG.Vbat * sADC_Fit.Vbat_A + sADC_Fit.Vbat_B;
+    Vcap_AVG = sADC_Value_AVG.Vcap * sADC_Fit.Vcap_A + sADC_Fit.Vcap_B;
 
-Ibat_AVG = sADC_Value_AVG.Ibat * sADC_Fit.Ibat_A + sADC_Fit.Ibat_B;
-Icap_AVG = sADC_Value_AVG.Icap * sADC_Fit.Icap_A + sADC_Fit.Icap_B;
+    Ibat_AVG = sADC_Value_AVG.Ibat * sADC_Fit.Ibat_A + sADC_Fit.Ibat_B;
+    Icap_AVG = sADC_Value_AVG.Icap * sADC_Fit.Icap_A + sADC_Fit.Icap_B;
 
-BatPower_AVG      = Ibat_AVG * Vbat_AVG;
-SuperCapPower_AVG = Vcap_AVG * Icap_AVG;
+    BatPower_AVG      = Ibat_AVG * Vbat_AVG;
+    SuperCapPower_AVG = Vcap_AVG * Icap_AVG;
 
-if(BatPower_AVG < SuperCapPower_AVG){
-    // 限制大小，防止下溢
-    ChassisPower_AVG = 0; 
-}else {
-    ChassisPower_AVG = BatPower_AVG - SuperCapPower_AVG + PBAT_POWER_LOSS; 
-    // 底盘功率 = 电池功率 - 超级电容功率
-    // 充电的时候，超级电容功率是正的，与底盘共同消耗电池的功率，所以底盘功率是电池功率 - 超级电容充电功率；
-    // 放电的时候，超级电容功率是负的，超级电容给底盘补偿功率，所以底盘功率是电池功率 - 超级电容放电功率（负的），负负的正，总功率就是|电容放电功率| + |电池功率|。
-}
+    if(BatPower_AVG < SuperCapPower_AVG){
+        // 限制大小，防止下溢
+        ChassisPower_AVG = 0; 
+    }else {
+        ChassisPower_AVG = BatPower_AVG - SuperCapPower_AVG + PBAT_POWER_LOSS; 
+        // 底盘功率 = 电池功率 - 超级电容功率
+        // 充电的时候，超级电容功率是正的，与底盘共同消耗电池的功率，所以底盘功率是电池功率 - 超级电容充电功率；
+        // 放电的时候，超级电容功率是负的，超级电容给底盘补偿功率，所以底盘功率是电池功率 - 超级电容放电功率（负的），负负的正，总功率就是|电容放电功率| + |电池功率|。
+    }
 
-if (Vcap_AVG > SOFTWARE_UVP_VCAP) {
-    // 限制大小，防止下溢
-    SuperCapEnergy_AVG = (Vcap_AVG - SOFTWARE_UVP_VCAP) * 100 / SUPERCAP_AVAILABLE_VOLTAGE;
-} else {
-    SuperCapEnergy_AVG = 0;
-}
+    if (Vcap_AVG > SOFTWARE_UVP_VCAP) {
+        // 限制大小，防止下溢
+        SuperCapEnergy_AVG = (Vcap_AVG - SOFTWARE_UVP_VCAP) * 100 / SUPERCAP_AVAILABLE_VOLTAGE;
+    } else {
+        SuperCapEnergy_AVG = 0;
+    }
 
-#ifdef PLUS
-if(sStateBit.BOOM_bit){
-    ChassisPower_AVG = BatPower_AVG + PBAT_POWER_LOSS;
-}
-#endif
+    #ifdef PLUS
+    if(sStateBit.BOOM_bit || sStateBit.SoftStart_bit){
+        ChassisPower_AVG = BatPower_AVG + PBAT_POWER_LOSS;
+    }
+    #endif
 
-sCAN_TX_data.ChassisPower = ChassisPower_AVG >> 1; // 发给电控的功率数值不需要太准确，所以右移一位，除以2，将uint8的数值范围变为0-512
-sCAN_TX_data.BatPower = BatPower_AVG;
-sCAN_TX_data.SuperCapEnergy = SuperCapEnergy_AVG;
+    sCAN_TX_data.ChassisPower = ChassisPower_AVG >> 1; // 发给电控的功率数值不需要太准确，所以右移一位，除以2，将uint8的数值范围变为0-512
+    sCAN_TX_data.BatPower = BatPower_AVG;
+    sCAN_TX_data.SuperCapEnergy = SuperCapEnergy_AVG;
+
+    if(Vbat_AVG >= 25.5){
+        sCAN_TX_data.BatVoltage = 255;
+    }else {
+        sCAN_TX_data.BatVoltage = Vbat_AVG *10;
+
+    }
 
 }
 
@@ -1432,6 +1464,7 @@ void DebugOut_UART(void){
     sUART_TxData.ch_data[9] = (float)sCAN_RX_data.PowerLimint;
     sUART_TxData.ch_data[10] = (float)sCAN_TX_data.SuperCapReady;
     sUART_TxData.ch_data[11] = (float)sCAN_TX_data.SuperCapState;
+    sUART_TxData.ch_data[12] = (float)uwTick;// 发送系统滴答计数，作为运行时间戳，单位ms
 
     sUART_TxData.tail[0] =0x00;
     sUART_TxData.tail[1] =0x00;
@@ -1471,7 +1504,6 @@ void ADC_Value_AVG_Compute(uint32_t Times){
 
     sADC_Value_SUM.Vbat += (uint32_t)ADC2Value[0];
     sADC_Value_SUM.Vcap += (uint32_t)ADC2Value[1];
-
 
     sADC_Value_SUM.Tcap += (uint32_t)ADC1Value[2];
     sADC_Value_SUM.Tmos += (uint32_t)ADC2Value[2];

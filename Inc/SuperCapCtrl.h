@@ -32,6 +32,7 @@ typedef enum
   UVP_CAP_PROTECTION = 7,
   OTP_PROTECTION = 8,
   BOOM_PROTECTION = 9,
+  CAN_OFFLINE = 10,
 } SuperCapStateTypeDef;
 
 typedef enum
@@ -149,7 +150,7 @@ typedef struct {
 #ifdef PLUS
 
 typedef struct {
-  float ch_data[12];
+  float ch_data[15];
   char tail[4];
 }JustFloatFrameTypedef;
 
@@ -268,7 +269,7 @@ typedef struct {
 #define SOFTWARE_OVP_VCAP 20.0f //最大电容组充电电压，电容组过压保护
 #define SOFTWARE_OVP_RECOVER_VCAP 19 //电容组过压保护恢复阈值，必须比上面的数值小
 
-#define SOFTWARE_UVP_VCAP 6.0f  //最小电容组放电截至电压，这里设定为6V。
+#define SOFTWARE_UVP_VCAP 7.0f  //最小电容组放电截至电压，这里设定为7V。
 //是因为电容组快没电的时候，需要迟滞一段时间才会进入欠压保护，避免瞬时的大功率导致的电容压降误触发欠压保护。
 #define SOFTWARE_UVP_RECOVER_VCAP 10  //电容组欠压保护恢复阈值，必须比上面的数值大
 
