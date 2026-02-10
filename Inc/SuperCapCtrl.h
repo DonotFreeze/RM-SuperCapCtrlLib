@@ -116,11 +116,6 @@ typedef struct {
 }ADC_Fit_ParametersTypeDef;
 
 
-typedef struct {
-  float ch_data[12];
-  char tail[4];
-}JustFloatFrameTypedef;
-
 
 /*
 ------------------------------------------------------------------------------------------------------------------------------------------
@@ -153,6 +148,11 @@ typedef struct {
 
 #ifdef PLUS
 
+typedef struct {
+  float ch_data[12];
+  char tail[4];
+}JustFloatFrameTypedef;
+
 #define ENABLE_CAP  ENABLE_CAP_GPIO_Port->BSRR = (uint32_t)ENABLE_CAP_Pin
 #define DISABLE_CAP  ENABLE_CAP_GPIO_Port->BRR = (uint32_t)ENABLE_CAP_Pin
 
@@ -179,8 +179,16 @@ typedef struct {
 #define TEST_OUT_LOW  TEST_OUT_GPIO_Port->BRR = (uint32_t)TEST_OUT_Pin
 
 #define SET_PWM_COMPARE(a) htim1.Instance->CCR2 = (a)
+
+#ifdef LITE
+#define SET_ADC_TRIGGER_COMPARE(b) htim1.Instance->CCR1 = ((b >> 3) + (b >> 2))
+
+#endif
+
+#ifdef PLUS
 #define SET_ADC_TRIGGER_COMPARE(b) htim1.Instance->CCR1 = (b >> 1)
 
+#endif
 /*
 ------------------------------------------------------------------------------------------------------------------------------------------
 */
@@ -235,9 +243,15 @@ typedef struct {
 #define MAX_PWM_COMPARE 26000 //PLUS版最大下管占空比。
 #define MIN_PWM_COMPARE 2700  //PLUS版最小下管占空比，不能再小了，再小电流就采不到了。
 
-//ADC采样NTC热敏电阻的拟合参数，对数拟合。
-#define NTC3950_100K_Fitting_A -41.18f
-#define NTC3950_100K_Fitting_B 367
+//ADC采样NTC热敏电阻，上拉47K电阻的拟合参数，对数拟合。Plus
+#define NTC3950_100K_RH_47K_Fitting_A -41.18f
+#define NTC3950_100K_RH_47K_Fitting_B 367
+
+//ADC采样NTC热敏电阻，下拉12K电阻的拟合参数，三项拟合。Lite
+#define NTC3950_100K_RL_12K_Fitting_A 2e-09f
+#define NTC3950_100K_RL_12K_Fitting_B -2e-05f
+#define NTC3950_100K_RL_12K_Fitting_C 0.062f
+#define NTC3950_100K_RL_12K_Fitting_D -7.2809f
 
 /*
 ------------------------------------------------------------------------------------------------------------------------------------------
@@ -254,12 +268,15 @@ typedef struct {
 #define SOFTWARE_OVP_VCAP 20.0f //最大电容组充电电压，电容组过压保护
 #define SOFTWARE_OVP_RECOVER_VCAP 19 //电容组过压保护恢复阈值，必须比上面的数值小
 
-#define SOFTWARE_UVP_VCAP 7.0f  //最小电容组放电截至电压，这里设定为7V，比20V的30%大一点。
+#define SOFTWARE_UVP_VCAP 6.0f  //最小电容组放电截至电压，这里设定为6V。
 //是因为电容组快没电的时候，需要迟滞一段时间才会进入欠压保护，避免瞬时的大功率导致的电容压降误触发欠压保护。
 #define SOFTWARE_UVP_RECOVER_VCAP 10  //电容组欠压保护恢复阈值，必须比上面的数值大
 
 #define SOFTWARE_OVP_VBAT 35 //电池端口最大电压，同时也是过压阈值
 #define SOFTWARE_OVP_RECOVER_VBAT 30  //电池端口过压恢复阈值
+
+#define SOFTWARE_OCP_IBAT 30 //电池最大输入电流，母线过流保护
+#define SOFTWARE_OCP_RECOVER_IBAT 25  //母线过流保护恢复阈值，必须比上面的数值小
 
 #define SOFTWARE_CHARGE_OCP_ICAP 15 //电容组最大充电电流，电容组过流保护
 #define SOFTWARE_CHARGE_OCP_RECOVER_ICAP 13 //电容组保护恢复阈值，必须比上面的数值小
@@ -288,13 +305,11 @@ typedef struct {
 
 #endif
 
-#define SOFTWARE_OCP_IBAT 30 //电池最大输入电流，母线过流保护
-#define SOFTWARE_OCP_RECOVER_IBAT 25  //母线过流保护恢复阈值，必须比上面的数值小
-
 #ifdef PLUS
 #define PBAT_POWER_LOSS 1   //电池功率误差补偿，PLUS版本拥有远端补偿，可以忽略线损，这个值给1是避免与裁判系统的相对误差。
 
 #endif
+
 
 #define SAFE_CHARGE_ICAP 10  //电容组充电安全电流
 //测试发现，我所用的超级电容组，从0V开始10A恒流充电到满电（电流小于0.1A），然后100W恒功率放电到1V，连续循环10次，电容组温升50°C左右
