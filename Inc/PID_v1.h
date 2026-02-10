@@ -13,15 +13,15 @@ extern "C" {
 #define REVERSE  1
 
 typedef struct{
-  float Kp,Ki,Kd;//涓変釜绯绘暟
+  float Kp,Ki,Kd;//三个系数
   uint8_t ControllerDirection;
   uint8_t FirstCompute;
 
   float Integral;
   float LastFeedback;
 
-  float MinIntegral,MaxIntegral;//绉垎闄愬箙
-  uint32_t OutMin,OutMax;//杈撳嚭闄愬箙
+  float MinIntegral,MaxIntegral;//积分限幅
+  uint32_t OutMin,OutMax;//输出限幅
 }PID_ParameterTypeDef;
 
 void PID_Init(PID_ParameterTypeDef * PID); 
