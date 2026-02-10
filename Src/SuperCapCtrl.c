@@ -1,7 +1,7 @@
 /**********************************************************************************************
- * 超级电容功率控制库：V1.1.2450
- * 代码建立日期：2024年5月1日
- * 最后修改日期：2024年12月17日
+ * 超级电容功率控制库：V1.1.2451
+ * 代码建立日期：2024年4月28日
+ * 最后修改日期：2024年12月19日
  * 编码格式：GB2312
  * 作者：某桂工的魔法电容使者
  * 
@@ -821,6 +821,9 @@ void Charge_Loop(void){
     // ADC采样触发比较值赋值，设定为上半桥开通时间的3/8处
     htim1.Instance->CCR1 = (TIM1_PWM2_Comapre >> 3) + (TIM1_PWM2_Comapre >> 2);
 
+    TIM1_PWM2_DISBREAK;
+    //充电的时候就一直打开PWM，不需要关闭。
+
     // 充电的时候，只会有两种情况，电池电流会掉到0.5A以下
     // 一是超级电容充满电了，处于涓流状态
     // 二是超级电容充电的时候，突然死掉，底盘断电了
@@ -828,34 +831,14 @@ void Charge_Loop(void){
     Hysteresis_Comparator(Ibat ,PMOS_ON_CURRENT ,PMOS_OFF_CURRENT , &IbatPMOSOffEdge);
     if (IbatPMOSOffEdge == FALLING) {
         PMOS_OffDelay++;
-        if (PMOS_OffDelay < COUNT_TO_10MS_ON_100Khz) {
-            // 这里前10MS还要打开是为了防止一些逻辑问题导致运行的时候管子没打开。
-            // 比如第一次上电的时候，没电流，但是半桥又是关闭状态，就会导致充不进电。
-            TIM1_PWM2_DISBREAK;
-            PMOS_ON;
-        } else if (PMOS_OffDelay >= COUNT_TO_100MS_ON_100Khz) {
+        if (PMOS_OffDelay >= COUNT_TO_100MS_ON_100Khz) {
             // 迟滞100ms才会关闭PMOS，防止误关断导致PMOS反复开关
             // 充电的时候，半桥处于Buck模式，直接关闭PMOS不会有事
             PMOS_OFF;
-            if(Icap < TRICKLE_CHARGE_CURRENT_CAP){
-                //充电电流小到一定程度之后认为充满了，就关闭半桥。
-                TrickleChargeDelay ++;
-                if(TrickleChargeDelay > COUNT_TO_100MS_ON_100Khz){
-                    TIM1_PWM2_BREAK;
-                    
-                    // 清除充电环路的PI参数和状态，让他下一次开始充电的时候会进行积分预加载。
-                    PID_Clear_Integral(&sPID_PowerLoop_Charge);
-                    PID_Clear_Integral(&sPID_buck_V);
-                    PID_Clear_Integral(&sPID_buck_I);
-                }
-            }else {
-                TrickleChargeDelay =0;
-            }
         }
-    } else {
-        TIM1_PWM2_DISBREAK;
-        PMOS_ON;
-        PMOS_OffDelay = 0;
+    }else {
+        PMOS_OffDelay =0;
+        //就算电流超过0.5A也不打开PMOS了，只有进去其他环路的时候才会打开PMOS。
     }
 
     // 清除放电环路的PI参数和状态，让他切换过去的时候会进行积分预加载。
