@@ -62,9 +62,11 @@ typedef struct{
 typedef struct {
   uint8_t Charge ; //超级电容充电。1充电，0放电
   uint8_t Enable ; //超级电容给使能。1使能，0失能
-  uint8_t PowerLimint;  //裁判系统功率限制
+  uint8_t PowerLimit;  //裁判系统功率限制
+  uint8_t ChargePower;  //超级电容充电功率
   uint8_t Dead; //机器人死亡状态，没用到
   float PowerLimitAfterOffset;
+  float ChargePowerAfterOffset;
 }CAN_ReceiveDataTypeDef;
 
 
@@ -75,6 +77,8 @@ typedef struct {
   SuperCapReadyTypeDef SuperCapReady;//超级电容【可用标志】：1为可用，0为不可用
   SuperCapStateTypeDef SuperCapState;//超级电容【状态标志】：各个状态对应的状态码查看E_SuperCapState枚举。
   uint8_t VoltageBat; //通过超级电容监控电池电压*10，
+  uint8_t DebugOut_BatPower;
+  int8_t DebugOut_SuperCapPower;
 }CAN_TransmitDataTypeDef;
 
 //这个是计算平均值使用的结构体
@@ -121,6 +125,8 @@ typedef struct {
 
 #define TEST_MODE (TEST_MODE_GPIO_Port->IDR & TEST_MODE_Pin)
 
+#define TIM1_PWM2_IS_OUT ((TIM1_BKIN_GPIO_Port->IDR & TIM1_BKIN_Pin) == 0)
+
 #define LED_CAP_ON HAL_GPIO_WritePin(LED_CAP_GPIO_Port,LED_CAP_Pin,GPIO_PIN_SET)
 #define LED_CAP_OFF HAL_GPIO_WritePin(LED_CAP_GPIO_Port,LED_CAP_Pin,GPIO_PIN_RESET)
 #define LED_CAP_BLINK HAL_GPIO_TogglePin(LED_CAP_GPIO_Port,LED_CAP_Pin)
@@ -129,6 +135,8 @@ typedef struct {
 #define LED_CHASSIS_OFF HAL_GPIO_WritePin(LED_CHASSIS_GPIO_Port,LED_CHASSIS_Pin,GPIO_PIN_RESET)
 #define LED_CHASSIS_BLINK HAL_GPIO_TogglePin(LED_CHASSIS_GPIO_Port,LED_CHASSIS_Pin)
 
+#define SET_PWM_COMPARE(a) htim1.Instance->CCR2 = (a)
+#define SET_ADC_TRIGGER_COMPARE(b) htim1.Instance->CCR1 = (b)
 
 /*
 ------------------------------------------------------------------------------------------------------------------------------------------
@@ -172,7 +180,7 @@ typedef struct {
 
 //Buck电流环PI
 #define PID_BUCK_I_KP 10
-#define PID_BUCK_I_KI 5
+#define PID_BUCK_I_KI 1
 
 //Boost电压环PI
 #define PID_BOOST_V_KP 10
@@ -184,7 +192,7 @@ typedef struct {
 
 //超级电容充电（功率环？）PI
 #define PID_CAP_CHARGE_KP 20
-#define PID_CAP_CHARGE_KI 1.5
+#define PID_CAP_CHARGE_KI 2
 
 //电池与超电同时输出（功率环？）PI
 #define PID_DISCHARGE_BTA_PLIMIT_KP 20
@@ -208,8 +216,8 @@ typedef struct {
 ------------------------------------------------------------------------------------------------------------------------------------------
 */
 //CAN通信ID
-#define CAN_SUPERCAP_ID 0x100 //电控发数据给超电使用的ID
-#define CAN_C_BOARD_ID 0x001  //超电发数据给电控使用的ID
+#define CAN_ID_SUPERCAP_TO_BUS 0x100 //超电发数据给电控使用的ID
+#define CAN_ID_BUS_TO_SUPERCAP 0x001  //电控发数据给超电使用的ID
 #define CAN_TEST_ID 0x255
 
 /*
@@ -223,11 +231,11 @@ typedef struct {
 //是因为电容组低压下电流比较大，会产生较大的线损，板子读到的电压就偏小了，这也算是一种补偿。
 #define SOFTWARE_UVP_RECOVER_VCAP 10  //电容组欠压保护恢复阈值，必须比上面的数值大
 
-#define SOFTWARE_OVP_VBAT 30 //电池端口最大电压
-#define SOFTWARE_OVP_RECOVER_VBAT 28  //MOS过温保护恢复阈值，必须比上面的数值小
+#define SOFTWARE_OVP_VBAT 30 //电池端口过压阈值
+#define SOFTWARE_OVP_RECOVER_VBAT 28  //电池端口过压恢复阈值
 
-#define SOFTWARE_CHARGE_OCP_ICAP 10 //电容组最大充电电流，电容组过流保护
-#define SOFTWARE_CHARGE_OCP_RECOVER_ICAP 8 //电容组保护恢复阈值，必须比上面的数值小
+#define SOFTWARE_CHARGE_OCP_ICAP 13 //电容组最大充电电流，电容组过流保护
+#define SOFTWARE_CHARGE_OCP_RECOVER_ICAP 11 //电容组保护恢复阈值，必须比上面的数值小
 
 #define SOFTWARE_DISCHARGE_OCP_ICAP -20 //电容组最大放电电流，电容组过流保护
 #define SOFTWARE_DISCHARGE_OCP_RECOVER_ICAP -18 //电容组过流保护恢复阈值，必须比上面的数值小（电流是矢量，所以-18比-20小）
@@ -244,23 +252,22 @@ typedef struct {
 //这些是硬件限制
 #define HARDWARE_OVP_VCAP 21  //最大电容组充电电压，超过这个电压，泄放保护就会生效，长时间泄放保护板温度过高会爆炸。
 #define HARDWARE_UVP_VCAP 5 //最小电容组放电截至电压，电容组电压太低，就无法满足输出功率需求
-#define HARDWARE_CHARGE_OCP_ICAP 15 //电容组最大充电电流，电容组大电流充电容易发烫
-#define HARDWARE_DISCHARGE_OCP_ICAP 25  //电容组最大放电电流，这个大概是电感的饱和电流，同时，长时间处于这个电流会导致温度过高
+#define HARDWARE_CHARGE_OCP_ICAP 15 //电容组充电电流检测最大量程
+#define HARDWARE_DISCHARGE_OCP_ICAP 25  //电容组放电电流检测最大量程，并且是电感的饱和电流
 #define HARDWARE_OCP_IBAT 12  //电池最大输入电流，长时间超过这个电流会导致电管保护
 #define HARDWARE_OVP_VBAT 35  //电池端口最大电压，长时间超过这个电压会导致TVS爆炸
 
 #define SOFTWARE_UVP_BAT 19 //电池欠压保护阈值，电池低于这个电压的时候，就认为电池快要没电了，超电会无法使用
 #define PBAT_POWER_LOSS 5   //电池功率误差补偿，通常包含线损和功率误差的补偿
 
-#define SAFE_CHARGE_ICAP 5  //电容组充电安全电流，这个是根据超级电容手册中的额定电流来决定的
+#define SAFE_CHARGE_ICAP 10  //电容组充电安全电流
+//测试发现，我所用的超级电容组，从0V开始10A恒流充电到满电（电流小于0.1A），然后100W恒功率放电到1V，连续循环10次，电容组温升50°C左右
 #define SAFE_CHARGE_VCAP 10 //当电容电压过低时，必须要等待电容充电超过这个电压才会允许使用超级电容
 
 #define SOFTSTART_CHARGE_ICAP 3 //软起动时的超级电容充电电流。
 
-#define PMOS_OFF_CURRENT 0.5f //当底盘流过的电流小于这个值时，PMOS关闭，作为机器人死亡的判断依据，起到底盘断电的作用
-#define PMOS_ON_CURRENT 1 
-
-#define TRICKLE_CHARGE_CURRENT_CAP 0.5f //涓流电流，充电的时候，使用这个电流来判断是否关闭超电
+#define PMOS_OFF_CURRENT 0.5f //当母线流过的电流小于这个值时，PMOS关闭，作为机器人死亡的判断依据，起到底盘断电的作用
+#define PMOS_ON_CURRENT 1 //当母线流过的电流大于这个值时，PMOS打开，作为机器人运行的判断依据，超级电容恢复工作
 
 #define SUPERCAP_AVAILABLE_VOLTAGE  (SOFTWARE_OVP_VCAP - SOFTWARE_UVP_VCAP) //电容组可用电压范围，用于粗略计算电容组的能量百分比
 /*
@@ -270,13 +277,10 @@ typedef struct {
 extern uint16_t ADC1Value[3];
 extern uint16_t ADC2Value[3];
 
-
-
 void ADC_Curve_Fitting(void);
 void FDCAN_Filter_Init(void);
 void Power_Loop_Parameter_Init(void);
 void A_Timing_Ranking_Idea(void);
-
 
 #ifdef __cplusplus
 }

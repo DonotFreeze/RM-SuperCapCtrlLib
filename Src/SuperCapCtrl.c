@@ -1,7 +1,7 @@
 /**********************************************************************************************
- * 超级电容功率控制库：V1.1.2504
+ * 超级电容功率控制库：V1.1.2517
  * 代码建立日期：2024年4月28日
- * 最后修改日期：2025年3月2日
+ * 最后修改日期：2025年4月27日
  * 编码格式：GB2312
  * 作者：某桂工的魔法电容使者
  * 
@@ -21,7 +21,6 @@
 PID_ParameterTypeDef sPID_buck_V              = {0};
 PID_ParameterTypeDef sPID_buck_I              = {0};
 PID_ParameterTypeDef sPID_boost_V             = {0};
-PID_ParameterTypeDef sPID_boost_I             = {0};
 PID_ParameterTypeDef sPID_PowerLoop_Charge    = {0};
 PID_ParameterTypeDef sPID_PowerLoop_Discharge = {0};
 
@@ -33,13 +32,12 @@ FDCAN_RxHeaderTypeDef sFDCAN1_RxHeader;
 FDCAN_TxHeaderTypeDef sFDCAN1_TxHeader;
 
 CAN_TransmitDataTypeDef sCAN_TX_data = {0};
-CAN_ReceiveDataTypeDef sCAN_RX_data  = {0};
+CAN_ReceiveDataTypeDef sCAN_RX_data  = {CHARGE ,DISABLE , 0, 0, 0, 0, 0};// 初始化初值，避免出错。
 
 StateFlagsTypeDef sStateBit = {0};
 
 // 滞回比较器的状态存储变量
 ComparatorStateTypeDef IbatOCPEdge = FALLING;
-ComparatorStateTypeDef IcapOCPEdge = FALLING;
 
 ComparatorStateTypeDef VbatOVPEdge = FALLING;
 ComparatorStateTypeDef VbatUVPEdge = RISING;
@@ -54,18 +52,19 @@ ComparatorStateTypeDef TcapOTPEdge = FALLING;
 ComparatorStateTypeDef VcapUVPRecoverEdge = FALLING;
 ComparatorStateTypeDef IbatPMOSOffEdge    = RISING;
 
-const ADC_Fit_ParametersTypeDef csADC_Fit_Parameters[10] = {
+const ADC_Fit_ParametersTypeDef csADC_Fit_Parameters[50] = {
     // UID0     ,UID1      ,UID2       ,Vbat_A  ,Vbat_B  ,Vcap_A  ,Vcap_B  ,Ibat_A  ,Ibat_B  ,Icap_A  ,Icap_B
-    {0x003B0057, 0x54315005, 0x20333830, 0.0095f, 0.0173f, 0.0068f, 0.0461f, 0.0036f, 0.0360f, 0.0123f, -33.496f},
+    {0x003B0057, 0x54315005, 0x20333830, 0.0094f, 0.0680f, 0.0068f, 0.0079f, 0.0034f, 0.0237f, 0.0175f, -47.279f},
     {0x003C0022, 0x54315005, 0x20333830, 0.0094f, 0.0175f, 0.0068f, 0.0460f, 0.0036f, 0.0360f, 0.0123f, -33.496f},
     {0x003B006D, 0x54315005, 0x20333830, 0.0095f, 0.0173f, 0.0068f, 0.0461f, 0.0036f, 0.0360f, 0.0123f, -33.496f},
-    {0x003D0022, 0x54315005, 0x20333830, 0.0095f, 0.0173f, 0.0068f, 0.0461f, 0.0036f, 0.0360f, 0.0123f, -33.496f},
+    {0x003D0022, 0x54315005, 0x20333830, 0.0094f, 0.0491f, 0.0068f, 0.0392f, 0.0034f, -0.0283f, 0.0124f, -32.954f},//2025-3-19数据
     {0x004F0051, 0x484E5006, 0x20353031, 0.0096f, 0.0732f, 0.0068f, 0.0501f, 0.0040f, 0.1937f, 0.0123f, -33.372f},
     {0x00230060, 0x484E5004, 0x20353031, 0.0095f, 0.0349f, 0.0068f, 0.0595f, 0.0042f, 0.1252f, 0.0129f, -34.796f},
     {0x00250045, 0x484E5004, 0x20353031, 0.0095f, 0.0793f, 0.0068f, 0.0441f, 0.0040f, 0.1331f, 0.0129f, -34.918f},
     {0x001B0051, 0x484E5004, 0x20353031, 0.0095f, 0.0476f, 0.0067f, 0.0569f, 0.0041f, 0.1250f, 0.0128f, -34.728f},
-    {0x0023005B, 0x484E5004, 0x20353031, 0.0095f, 0.0731f, 0.0068f, 0.0180f, 0.0041f, 0.1517f, 0.0128f, -34.490f},
-    {0x001E0044, 0x484E5004, 0x20353031, 0.0095f, 0.0631f, 0.0068f, 0.0413f, 0.0042f, 0.2127f, 0.0127f, -34.627f},
+    {0x003F0052, 0x534B5016, 0x20343932, 0.0093f, 0.2871f, 0.0068f, 0.0709f, 0.0034f, -0.0071f, 0.0123f, -33.409f},//2025-3-18数据
+    {0x001e0051, 0x534b5016, 0x20343932, 0.0087f, 0.0392f, 0.0058f, 0.0339f, 0.0035f, 0.2045f, 0.0133f, -35.374f},
+    {0x0059004F, 0x534B5016, 0x20343932, 0.0104f, 0.1006f, 0.0067f, 0.0835f, 0.0034f, 0.0741f, 0.0121f, -32.581f},//2025-3-19数据
     };
 
 // 初始化之后，ADC的校拟合参数就会被传入这个结构体，也就是在代码中会调用的数据。
@@ -91,8 +90,11 @@ static inline void Bat_Undervoltage_Protection_Loop(void);
 static inline void CAP_Undervoltage_Protection_Loop(void);
 static inline void Charge_Loop(void);
 static inline void Discharge_Loop(void);
-static inline void PMOS_Off(void);
+static inline void Power_Down(void);
 static inline void Wait_Loop(void);
+
+static inline uint8_t SuperCap_Disable(void);
+static inline uint8_t SuperCap_Enable(void);
 
 static inline void Can_SendMess(CAN_TransmitDataTypeDef *TX_temp);
 static inline void ADC_Value_AVG_Compute(uint32_t Times);
@@ -107,6 +109,7 @@ uint16_t ADC1Value[3] = {0};
 uint16_t ADC2Value[3] = {0};
 
 uint32_t CAN_WDG_Count = 0; // CAN离线检测看门狗计数
+uint8_t  CAN_ReceiveDataRefresh_Flag =1; // CAN接收数据刷新标志，用于限制接收到的CAN数据的刷新速率
 
 uint32_t PID_PowerLoopOut   = 0; // 中间量，功率环PID输出
 uint32_t PID_CurrentLoopOut = 0; // 中间量，电流环PID输出
@@ -128,7 +131,6 @@ float Pbat        = 0; // 环路计算中间量，电池端口功率
 float P_ChargeCap = 0; // 电容充电时候设定的功率
 
 
-uint32_t PMOS_OffDelay = 0; //PMOS关断延迟
 
 /*
 ------------------------------------------------------------------------------------------------------------------------------------------
@@ -178,15 +180,6 @@ void Power_Loop_Parameter_Init(void){
     PID_Init(&sPID_boost_V);
     // Boost电压环PID参数初始化
 
-    sPID_boost_I.Kp                  = PID_BOOST_I_KP;
-    sPID_boost_I.Ki                  = PID_BOOST_I_KI;
-    sPID_boost_I.OutMax              = BOOST_DUTY_COMPARE_MAX;
-    sPID_boost_I.OutMin              = BOOST_DUTY_COMPARE_MIN;
-    sPID_boost_I.ControllerDirection = REVERSE; // 意思是，控制方向与变化方向相反
-    // 当设定输出为10A，当前输出为5A，提高输出电流的方法是增大输出电压，故与上面相同，控制反向
-    PID_Init(&sPID_boost_I);
-    // Boost电流环PID参数初始化
-
     sPID_PowerLoop_Charge.Kp                  = PID_CAP_CHARGE_KP;
     sPID_PowerLoop_Charge.Ki                  = PID_CAP_CHARGE_KI;
     sPID_PowerLoop_Charge.OutMax              = BUCK_DUTY_COMPARE_MAX;
@@ -221,12 +214,13 @@ void A_Timing_Ranking_Idea(void){
     State_Change();
     Power_Loop();
 
-    ADC_Value_AVG_Compute(DIV128); // 运行频率：100K/128 = 781hz
+    ADC_Value_AVG_Compute(DIV512); // 运行频率：100K/512 = 190hz
 
-    if ((TimingCNT & DIV128) == 1) Power_Calculations();        // 运行频率：100K/128 = 781hz
-    if ((TimingCNT & DIV128) == 2) Can_SendMess(&sCAN_TX_data); // 运行频率：100K/128 = 781hz
+    if ((TimingCNT & DIV512) == 1) Power_Calculations();        // 运行频率：100K/128 = 190hz
+    if ((TimingCNT & DIV512) == 2) Can_SendMess(&sCAN_TX_data); // 运行频率：100K/128 = 190hz
     // 计算平均值、功率计算、CAN发送。数据更新将以最慢的那个为准。
 
+    if ((TimingCNT & DIV1024) == 10) CAN_ReceiveDataRefresh_Flag = 1; //刷新频率：100K/1024 = 97hz
     if ((TimingCNT & DIV8192) == 3) Temperature_Calculations(); // 运行频率：100K/8192 = 12hz
     if ((TimingCNT & DIV8192) == 10) LED_Refresh();             // 运行频率：100K/8192 = 12hz
     if ((TimingCNT & DIV8192) == 10) HAL_IWDG_Refresh(&hiwdg);  // 运行频率：100K/8192 = 12hz
@@ -245,7 +239,6 @@ void ADC_Convert_To_Reality(void){
     Ibat = ADC1Value[0] * sADC_Fit.Ibat_A + sADC_Fit.Ibat_B;
     Icap = ADC1Value[1] * sADC_Fit.Icap_A + sADC_Fit.Icap_B;
 }
-
 /*
 ------------------------------------------------------------------------------------------------------------------------------------------
 */
@@ -256,8 +249,8 @@ void Power_Calculations(void){
     float Ibat_AVG =0;
     float Icap_AVG =0;
 
-    uint8_t BatPower;
-    int SuperCapPower;
+    uint32_t BatPower;
+    int32_t SuperCapPower;
 
     Vbat_AVG = sADC_Value_AVG.Vbat * sADC_Fit.Vbat_A + sADC_Fit.Vbat_B;
     Vcap_AVG = sADC_Value_AVG.Vcap * sADC_Fit.Vcap_A + sADC_Fit.Vcap_B;
@@ -268,12 +261,15 @@ void Power_Calculations(void){
     BatPower      = Ibat_AVG * Vbat_AVG;
     SuperCapPower = Vcap_AVG * Icap_AVG;
 
-    if (sStateBit.Charge_bit) {
-        sCAN_TX_data.ChassisPower = BatPower +PBAT_POWER_LOSS; // 充电的时候底盘消耗的总功率（电机+电容充电）就是电池功率啦，+上电池功率损失是一个补偿。
-
-    } else if (!sStateBit.Charge_bit) {
+    if (sStateBit.Charge_bit == CHARGE) {
+        if(BatPower > 250){
+            sCAN_TX_data.ChassisPower = 255;
+        }else {
+            sCAN_TX_data.ChassisPower = BatPower +PBAT_POWER_LOSS; // 充电的时候底盘消耗的总功率（电机+电容充电）就是电池功率啦，+上电池功率损失是一个补偿。
+        }
+    } else if (sStateBit.Charge_bit == DISCHARGE) {
         // 放电的时候，电流是负的，所以他算出来的放电功率也是负的
-        // 电池功率 - 放电功率（负的），负负的正，总功率就是|电容放电功率| + |电池功率|。虽然上面的也是剪掉，但是我这样区分来写更清楚一点。
+        // 电池功率 - 放电功率（负的），负负的正，总功率就是|电容放电功率| + |电池功率|。
         if ((BatPower - SuperCapPower) < 250) {
             // 限制大小防止上溢
             sCAN_TX_data.ChassisPower = BatPower - SuperCapPower + PBAT_POWER_LOSS;
@@ -315,12 +311,12 @@ void Hysteresis_Comparator(float input, float rising_threshold, float falling_th
         // 初始状态为LOW
         if (input > rising_threshold) {
             // 如果输入超过上阈值
-            *state = RISING; // 更新状态为HIGH
+            *state = RISING;
         }
     } else { // 当前状态为HIGH
         if (input < falling_threshold) {
             // 如果输入低于下阈值
-            *state = FALLING; // 更新状态为LOW
+            *state = FALLING;
         }
     }
     // 如果没有状态变化，则保持当前状态
@@ -359,7 +355,7 @@ void State_Change(void){
         // 迟滞防止误保护
         if (OCP_Delay >= COUNT_TO_1S_ON_100Khz) {
             sStateBit.OCP_bit = 1;
-            OCP_Delay             = 0;
+            OCP_Delay         = 0;
         }
     } else if (IbatOCPEdge == FALLING) {
         OCP_Delay = 0;
@@ -380,7 +376,7 @@ void State_Change(void){
     }
 
     // 判断母线电压是否过压，母线电压过压是由电机刹车动能回收引起的。
-    Hysteresis_Comparator(Vbat, SOFTWARE_OVP_VBAT, SOFTWARE_OVP_RECOVER_VBAT, &VbatOVPEdge);
+    Hysteresis_Comparator(Vbat, HARDWARE_OVP_VBAT, SOFTWARE_OVP_RECOVER_VBAT, &VbatOVPEdge);
     if (VbatOVPEdge == RISING) {
         OVP_BatDelay++;
         // 迟滞防止误保护
@@ -392,7 +388,7 @@ void State_Change(void){
         OVP_BatDelay = 0;
     }
 
-    // 判断电池是否低电压保护
+    // 判断电池是否低电压，并进行保护
     Hysteresis_Comparator(Vbat, SOFTWARE_UVP_BAT + 2, SOFTWARE_UVP_BAT, &VbatUVPEdge);
     if (VbatUVPEdge == FALLING) {
         UVP_BatDelay++;
@@ -434,59 +430,56 @@ void State_Change(void){
  * 这里使用if是因为写起来比较方便，同时可以拥有优先级判断，能够保证所有保护均会生效。
  */
 void Power_Loop(){
-    if (sStateBit.CAN_Offline_bit) {
-        // CAN离线
-        CAN_Offline_Loop();
-    } else if (sStateBit.SoftStart_bit) {
-        // 软起动
-        sCAN_TX_data.SuperCapReady = 0;
-        sCAN_TX_data.SuperCapState = SOFRSTART_PROTECTION;
-        Soft_Start_Loop();
+    if (sStateBit.UVP_Bat_bit) {
+        // 电池欠压保护，一旦进入，就必须换电池，重新上电
+        sCAN_TX_data.SuperCapReady = UNREADY;
+        sCAN_TX_data.SuperCapState = UVP_BAT_PROTECTION;
+        Bat_Undervoltage_Protection_Loop();
     } else if (sStateBit.OCP_bit) {
         // 过流保护，也是短路保护
         // 过流不会CC，只会直接关断。
-        sCAN_TX_data.SuperCapReady = 0;
+        sCAN_TX_data.SuperCapReady = UNREADY;
         sCAN_TX_data.SuperCapState = OCP_PROTECTION;
         Over_Current_Protection_Loop();
     } else if (sStateBit.OVP_Bat_bit) {
         // 母线过压保护
-        sCAN_TX_data.SuperCapReady = 0;
+        sCAN_TX_data.SuperCapReady = UNREADY;
         sCAN_TX_data.SuperCapState = OVP_BAT_PROTECTION;
         Bat_Over_Voltage_Protection_Loop();
-    } else if (sStateBit.UVP_Bat_bit) {
-        // 电池欠压保护，一旦进入，就必须换电池
-        sCAN_TX_data.SuperCapReady = 0;
-        sCAN_TX_data.SuperCapState = UVP_BAT_PROTECTION;
-        Bat_Undervoltage_Protection_Loop();
-    } else if (sStateBit.UVP_Cap_bit) {
-        //  超级电容低电压保护，设定值为电容组额定电压的30%
-        sCAN_TX_data.SuperCapReady = 0;
-        sCAN_TX_data.SuperCapState = UVP_CAP_PROTECTION;
-        CAP_Undervoltage_Protection_Loop();
-    } else if (sStateBit.OVP_Cap_bit) {
-        //  超级电容过充电保护。
-        //  超级电容过充保护已经结合在环路中了，他会进行CV。
-        sCAN_TX_data.SuperCapReady = 0;
-        sCAN_TX_data.SuperCapState = UVP_CAP_PROTECTION;
     } else if (sStateBit.OTP_CAP_bit || sStateBit.OTP_MOS_bit) {
         // 过温保护
-        sCAN_TX_data.SuperCapReady = 0;
+        sCAN_TX_data.SuperCapReady = UNREADY;
         sCAN_TX_data.SuperCapState = OTP_PROTECTION;
         Over_Temperature_Protect_Loop();
-    } else if (sStateBit.Charge_bit && sStateBit.Enable_bit) {
+    } else if (sStateBit.CAN_Offline_bit) {
+        // CAN离线
+        sCAN_TX_data.SuperCapReady = UNREADY;
+        sCAN_TX_data.SuperCapState = SOFRSTART_PROTECTION;
+        CAN_Offline_Loop();
+    } else if (sStateBit.SoftStart_bit) {
+        // 软起动
+        sCAN_TX_data.SuperCapReady = UNREADY;
+        sCAN_TX_data.SuperCapState = SOFRSTART_PROTECTION;
+        Soft_Start_Loop();
+    } else if (sStateBit.UVP_Cap_bit) {
+        //  超级电容低电压保护，设定值为电容组额定电压的30%
+        sCAN_TX_data.SuperCapReady = UNREADY;
+        sCAN_TX_data.SuperCapState = UVP_CAP_PROTECTION;
+        CAP_Undervoltage_Protection_Loop();
+    } else if (sStateBit.Charge_bit == CHARGE && sStateBit.Enable_bit == ENABLE) {
         // 【充电】：让超电充电，且使能超电
-        sCAN_TX_data.SuperCapReady = 1;
+        sCAN_TX_data.SuperCapReady = READY;
         sCAN_TX_data.SuperCapState = CHARGE;
         Charge_Loop();
-    } else if ((!sStateBit.Charge_bit) && sStateBit.Enable_bit) {
+    } else if (sStateBit.Charge_bit == DISCHARGE && sStateBit.Enable_bit == ENABLE) {
         // 【放电】：让超电放电，且使能超电
-        sCAN_TX_data.SuperCapReady = 1;
+        sCAN_TX_data.SuperCapReady = READY;
         sCAN_TX_data.SuperCapState = DISCHARGE;
         Discharge_Loop();
-    } else if (!sStateBit.Enable_bit) {
+    } else if (sStateBit.Enable_bit == DISABLE) {
         // 【待机】：未开启超电，且移动；防止超电充电会跟底盘抢功率
         //  开启超电，且不移动；防止超电无脑将电池功率拉至功率限制，但是车子又不走，此时所有功率都会往超级电容走，可能会导致超级电容被充爆
-        sCAN_TX_data.SuperCapReady = 1;
+        sCAN_TX_data.SuperCapReady = READY;
         sCAN_TX_data.SuperCapState = WAIT;
         Wait_Loop();
     }
@@ -509,6 +502,7 @@ uint32_t SaftChargeOutDelay = 0;
 void Soft_Start_Loop(void){
     // 软起动的时候，PMOS是处于关闭状态的，但是不影响充电，因为功率比较小，不会导致PMOS烧毁
     if (sCAN_RX_data.Charge && sCAN_RX_data.Enable) {
+
         PID_Preload_Integral(&sPID_buck_I, Vcap);
         PID_Compute(&sPID_buck_I, Icap, SOFTSTART_CHARGE_ICAP, &PID_CurrentLoopOut);
 
@@ -518,23 +512,38 @@ void Soft_Start_Loop(void){
         Loop_Competition_Buck(PID_CurrentLoopOut, PID_VoltageLoopOut, &TIM1_PWM2_Comapre);
 
         // 半桥PWM比较值赋值，设定PWM占空比，这里是以上半桥的正占空比进行设置。
-        htim1.Instance->CCR2 = TIM1_PWM2_Comapre;
+        SET_PWM_COMPARE(TIM1_PWM2_Comapre);
         // ADC采样触发比较值赋值，设定为上半桥开通时间的3/8处
-        htim1.Instance->CCR1 = (TIM1_PWM2_Comapre >> 3) + (TIM1_PWM2_Comapre >> 2);
+        SET_ADC_TRIGGER_COMPARE((TIM1_PWM2_Comapre >> 3) + (TIM1_PWM2_Comapre >> 2));
+
         // 需要更新PMW比较值之后才能输出PWM，防止PWM比较值初始值与目标值差异过大而导致爆炸。
-        TIM1_PWM2_DISBREAK;
+        //如果PWM处于刹车状态，则PID保持初始状态，避免计算错误导致
+        if(!TIM1_PWM2_IS_OUT){
+            PID_Clear_Integral(&sPID_boost_V);
+            PID_Clear_Integral(&sPID_buck_V);
+            PID_Clear_Integral(&sPID_buck_I);
+            PID_Clear_Integral(&sPID_PowerLoop_Discharge);
+            PID_Clear_Integral(&sPID_PowerLoop_Charge);
+        }
+
+        SuperCap_Enable();
+
     } else {
-        TIM1_PWM2_BREAK;
+        SuperCap_Disable();
+        PID_Clear_Integral(&sPID_boost_V);
+        PID_Clear_Integral(&sPID_buck_V);
         PID_Clear_Integral(&sPID_buck_I);
+        PID_Clear_Integral(&sPID_PowerLoop_Discharge);
+        PID_Clear_Integral(&sPID_PowerLoop_Charge);
     }
 
-    // 第一次上电的时候需要充电到10V以上才会退出缓启动
-    if (Vcap > SAFE_CHARGE_VCAP) {
+    // 第一次上电的时候需要充电到5V以上才会退出缓启动
+    if (Vcap > 5) {
         SaftChargeOutDelay++;
-        if (SaftChargeOutDelay >= COUNT_TO_1S_ON_100Khz) {
+        if (SaftChargeOutDelay >= COUNT_TO_1S_ON_100Khz && sCAN_RX_data.Charge == CHARGE) {
             sStateBit.SoftStart_bit = 0;
+            sStateBit.UVP_Cap_bit   = 1;
             SaftChargeOutDelay      = 0;
-            PMOS_ON;
         }
     } else {
         SaftChargeOutDelay = 0;
@@ -549,12 +558,11 @@ uint32_t CAN_ONline_Delay = 0;
  * 无法发送数据给电控。
  */
 void CAN_Offline_Loop(void){
-    TIM1_PWM2_BREAK;
-    PMOS_Off();
+
+    SuperCap_Disable();
     PID_Clear_Integral(&sPID_buck_V);
     PID_Clear_Integral(&sPID_buck_I);
     PID_Clear_Integral(&sPID_boost_V);
-    PID_Clear_Integral(&sPID_boost_I);
     PID_Clear_Integral(&sPID_PowerLoop_Charge);
     PID_Clear_Integral(&sPID_PowerLoop_Discharge);
 
@@ -562,8 +570,8 @@ void CAN_Offline_Loop(void){
     // 因为执行这条函数之前在State_Change();中执行了一次CAN_WDG_Count++；
     if (CAN_WDG_Count == 1) {
         CAN_ONline_Delay++;
-        // 接收到十次数据才会判定为CAN在线。
-        if (CAN_ONline_Delay >= 10) {
+        // 接收到十次数据，并且收到的数据为充电。才会判定为CAN在线。
+        if (CAN_ONline_Delay >= 10 && sCAN_RX_data.Charge == CHARGE) {
             sStateBit.CAN_Offline_bit = 0;
             CAN_ONline_Delay          = 0;
         }
@@ -587,22 +595,20 @@ uint32_t OCP_RecoverDelay = 0;
  * sCAN_TX_data.SuperCapState = 4
  */
 void Over_Current_Protection_Loop(void){
-    TIM1_PWM2_BREAK;
-    PMOS_Off();
+
+    SuperCap_Disable();
     PID_Clear_Integral(&sPID_buck_V);
     PID_Clear_Integral(&sPID_buck_I);
     PID_Clear_Integral(&sPID_boost_V);
-    PID_Clear_Integral(&sPID_boost_I);
     PID_Clear_Integral(&sPID_PowerLoop_Charge);
     PID_Clear_Integral(&sPID_PowerLoop_Discharge);
 
     // 电流恢复正常之后5s解除保护
     if ((Ibat < (SOFTWARE_OCP_IBAT - 2)) && (Icap < (SOFTWARE_CHARGE_OCP_ICAP - 2)) && (Icap > (SOFTWARE_DISCHARGE_OCP_ICAP + 2))) {
         OCP_RecoverDelay++;
-        if (OCP_RecoverDelay >= COUNT_TO_5S_ON_100Khz) {
+        if (OCP_RecoverDelay >= COUNT_TO_5S_ON_100Khz && sCAN_RX_data.Charge == CHARGE) {
             sStateBit.OCP_bit = 0;
             OCP_RecoverDelay  = 0;
-            PMOS_ON;
         }
     } else {
         OCP_RecoverDelay = 0;
@@ -620,12 +626,11 @@ uint32_t OVP_RecoverDelay = 0;
  * sCAN_TX_data.SuperCapState = 5
  */
 void Bat_Over_Voltage_Protection_Loop(void){
-    TIM1_PWM2_BREAK;
-    PMOS_Off();
+
+    SuperCap_Disable();
     PID_Clear_Integral(&sPID_buck_V);
     PID_Clear_Integral(&sPID_buck_I);
     PID_Clear_Integral(&sPID_boost_V);
-    PID_Clear_Integral(&sPID_boost_I);
     PID_Clear_Integral(&sPID_PowerLoop_Charge);
     PID_Clear_Integral(&sPID_PowerLoop_Discharge);
 
@@ -633,11 +638,9 @@ void Bat_Over_Voltage_Protection_Loop(void){
         OVP_RecoverDelay++;
 
         // 电压恢复正常5s之后解除过压保护
-        if (OVP_RecoverDelay >= COUNT_TO_5S_ON_100Khz) {
+        if (OVP_RecoverDelay >= COUNT_TO_5S_ON_100Khz && sCAN_RX_data.Charge == CHARGE) {
             sStateBit.OVP_Bat_bit = 0;
             OVP_RecoverDelay      = 0;
-            PMOS_OffDelay         = 0;
-            PMOS_ON;
         }
     } else {
         OVP_RecoverDelay = 0;
@@ -653,8 +656,40 @@ void Bat_Over_Voltage_Protection_Loop(void){
  * sCAN_TX_data.SuperCapState = 6
  */
 void Bat_Undervoltage_Protection_Loop(void){
-    TIM1_PWM2_BREAK;
-    PMOS_Off();
+
+    SuperCap_Disable();
+}
+
+uint32_t OTP_RecoverDelay = 0;
+/**
+ * 过温保护函数
+ * sStateBit.UVP_Cap_bit =1
+ * 无视电控发过来的标志。
+ * 发回去给电控的数据
+ * sCAN_TX_data.SuperCapReady = 0
+ * sCAN_TX_data.SuperCapState = 8
+ */
+void Over_Temperature_Protect_Loop(void){
+
+    SuperCap_Disable();
+    PID_Clear_Integral(&sPID_buck_V);
+    PID_Clear_Integral(&sPID_buck_I);
+    PID_Clear_Integral(&sPID_boost_V);
+    PID_Clear_Integral(&sPID_PowerLoop_Charge);
+    PID_Clear_Integral(&sPID_PowerLoop_Discharge);
+
+    if (Tmos < SOFTWARE_OTP_RECOVER_MOS && Tcap < SOFTWARE_OTP_RECOVER_CAP) {
+        OTP_RecoverDelay++;
+
+        // 温度降低5s之后解除过压保护
+        if (OTP_RecoverDelay >= COUNT_TO_5S_ON_100Khz) {
+            sStateBit.OTP_MOS_bit = 0;
+            sStateBit.OTP_CAP_bit = 0;
+            OTP_RecoverDelay      = 0;
+        }
+    } else {
+        OTP_RecoverDelay = 0;
+    }
 }
 
 /*
@@ -678,76 +713,47 @@ void CAP_Undervoltage_Protection_Loop(void){
 
         // 使用最大充电电流算出一个最大充电功率，将最大充电功率限制在这个值之内。
         SafeChargePcap = Vcap * SAFE_CHARGE_ICAP;
-        if (sCAN_RX_data.PowerLimitAfterOffset > SafeChargePcap) {
+        if (sCAN_RX_data.ChargePowerAfterOffset > SafeChargePcap) {
             P_ChargeCap = SafeChargePcap;
         } else {
-            P_ChargeCap = sCAN_RX_data.PowerLimitAfterOffset;
+            P_ChargeCap = sCAN_RX_data.ChargePowerAfterOffset;
         }
 
         Pcap = Vcap * Icap;
         PID_Preload_Integral(&sPID_PowerLoop_Charge, Vcap);
         PID_Compute(&sPID_PowerLoop_Charge, Pcap, P_ChargeCap, &PID_PowerLoopOut);
 
-        PID_Preload_Integral(&sPID_buck_V, Vbat);
+        PID_Preload_Integral(&sPID_buck_V, Vcap);
         PID_Compute(&sPID_buck_V, Vcap, SOFTWARE_OVP_VCAP, &PID_VoltageLoopOut);
         Loop_Competition_Buck(PID_PowerLoopOut, PID_VoltageLoopOut, &TIM1_PWM2_Comapre);
 
         // 半桥PWM比较值赋值，设定PWM占空比，这里是以上半桥的正占空比进行设置。
-        htim1.Instance->CCR2 = TIM1_PWM2_Comapre;
+        SET_PWM_COMPARE(TIM1_PWM2_Comapre);
         // ADC采样触发比较值赋值，设定为上半桥开通时间的3/8处
-        htim1.Instance->CCR1 = (TIM1_PWM2_Comapre >> 3) + (TIM1_PWM2_Comapre >> 2);
-    }
+        SET_ADC_TRIGGER_COMPARE((TIM1_PWM2_Comapre >> 3) + (TIM1_PWM2_Comapre >> 2));
 
-    if (Ibat < PMOS_OFF_CURRENT) {
         // 电容欠压充电的时候，只会有一种情况，电池电流会掉到0.5A以下：
         // 超级电容欠压充电的时候，突然死掉，底盘断电了
+
         // 所以当这种情况下，把半桥关掉，电容就达到了断电的目的
-        PMOS_OffDelay++;
-        if (PMOS_OffDelay < COUNT_TO_10MS_ON_100Khz) {
-            // 这里前10MS还要打开是为了防止一些问题导致运行的时候管子和半桥没打开。
-            // 比如第一次上电的时候，没电流，但是半桥又是关闭状态，就会导致充不进电。
-            if (sCAN_RX_data.Enable && sCAN_RX_data.Charge) {
-                // 只有【充电】【使能】同时为1时，才会打开半桥，防止充电的时候和底盘电机抢功率
-                TIM1_PWM2_DISBREAK;
-            } else {
-                TIM1_PWM2_BREAK;
-                // 清除充电环路的PI参数和状态，让他切换过去的时候会进行积分预加载。
-                PID_Clear_Integral(&sPID_PowerLoop_Charge);
-                PID_Clear_Integral(&sPID_buck_V);
-                PID_Clear_Integral(&sPID_buck_I);
-            }
-            PMOS_ON;
-        } else if (PMOS_OffDelay >= COUNT_TO_100MS_ON_100Khz) {
-            // 迟滞100ms才会关闭PMOS，防止误关断导致PMOS反复开关
-            // 充电的时候，半桥处于Buck模式，直接关闭PMOS不会有事
-            PMOS_OFF;
-        }
-    } else {
-        // 电流大于0.5A，要么是在移动，要么是在充电
-        // 如果是在移动，就必须把PWM关掉，防止抢功率
-        if (sCAN_RX_data.Enable && sCAN_RX_data.Charge) {
-            // 只有【充电】【使能】同时为1时，才会打开半桥，防止充电的时候和底盘电机抢功率
-            TIM1_PWM2_DISBREAK;
-        } else {
-            TIM1_PWM2_BREAK;
-            // 清除充电环路的PI参数和状态，让他切换过去的时候会进行积分预加载。
-            PID_Clear_Integral(&sPID_PowerLoop_Charge);
-            PID_Clear_Integral(&sPID_buck_V);
-            PID_Clear_Integral(&sPID_buck_I);
-        }
-        PMOS_ON;
-        PMOS_OffDelay = 0;
+        Power_Down();
+
+    }else {
+        SuperCap_Disable();
+        PID_Clear_Integral(&sPID_boost_V);
+        PID_Clear_Integral(&sPID_buck_V);
+        PID_Clear_Integral(&sPID_PowerLoop_Discharge);
+        PID_Clear_Integral(&sPID_PowerLoop_Charge);
     }
 
     // 清除放电环路的PI参数和状态，让他切换过去的时候会进行积分预加载。
     PID_Clear_Integral(&sPID_PowerLoop_Discharge);
     PID_Clear_Integral(&sPID_boost_V);
-    PID_Clear_Integral(&sPID_boost_I);
 
     // 这个if是判断超电什么时候解除电容组UVP的
     // 每次进入UVP的时候，就说明电控把超电榨干了，需要给他充电到一定电压才能允许再次开启超电。
     Hysteresis_Comparator(Vcap, SAFE_CHARGE_VCAP, SAFE_CHARGE_VCAP - 2, &VcapUVPRecoverEdge);
-    if (VcapUVPRecoverEdge == RISING && sCAN_RX_data.Charge) {
+    if (VcapUVPRecoverEdge == RISING && sCAN_RX_data.Charge == CHARGE) {
         // 与上  电控的【充电】是因为，欠压保护只会出现在电控一直放电榨干了超电。
         // 超级电容对欠压的处理是一种保护机制，会告诉电控已经保护了，
         // 只要超级电容处于保护状态，电控都应该将【充电】置1，
@@ -758,46 +764,10 @@ void CAP_Undervoltage_Protection_Loop(void){
             sStateBit.UVP_Cap_bit = 0;
             sStateBit.Charge_bit  = 1;
             sStateBit.Enable_bit  = 0;
-            PMOS_ON;
         }
-    } else if (VcapUVPRecoverEdge == FALLING || (!sCAN_RX_data.Charge)) {
+    } else if (VcapUVPRecoverEdge == FALLING || sCAN_RX_data.Charge == DISCHARGE) {
         // 电容充电没达到安全电压，或者电控没有把【充电】置1，都不会退出欠压保护
         UVP_CapRecover_CNT = 0;
-    }
-}
-
-uint32_t OTP_RecoverDelay = 0;
-/**
- * 过温保护函数
- * sStateBit.UVP_Cap_bit =1
- * 无视电控发过来的标志。
- * 发回去给电控的数据
- * sCAN_TX_data.SuperCapReady = 0
- * sCAN_TX_data.SuperCapState = 8
- */
-void Over_Temperature_Protect_Loop(void){
-    TIM1_PWM2_BREAK;
-    PMOS_Off();
-    PID_Clear_Integral(&sPID_buck_V);
-    PID_Clear_Integral(&sPID_buck_I);
-    PID_Clear_Integral(&sPID_boost_V);
-    PID_Clear_Integral(&sPID_boost_I);
-    PID_Clear_Integral(&sPID_PowerLoop_Charge);
-    PID_Clear_Integral(&sPID_PowerLoop_Discharge);
-
-    if (Tmos < SOFTWARE_OTP_RECOVER_MOS && Tcap < SOFTWARE_OTP_RECOVER_CAP) {
-        OTP_RecoverDelay++;
-
-        // 温度降低5s之后解除过压保护
-        if (OTP_RecoverDelay >= COUNT_TO_5S_ON_100Khz) {
-            sStateBit.OTP_MOS_bit = 0;
-            sStateBit.OTP_CAP_bit = 0;
-            OTP_RecoverDelay      = 0;
-            PMOS_OffDelay         = 0;
-            PMOS_ON;
-        }
-    } else {
-        OTP_RecoverDelay = 0;
     }
 }
 
@@ -820,49 +790,34 @@ uint32_t TrickleChargeDelay = 0;
 void Charge_Loop(void){
     // 使用安全充电电流算出一个最大充电功率，将最大充电功率限制在这个值之内。
     SafeChargePcap = Vcap * SAFE_CHARGE_ICAP;
-    if (sCAN_RX_data.PowerLimitAfterOffset > SafeChargePcap) {
+    if (sCAN_RX_data.ChargePowerAfterOffset > SafeChargePcap) {
         P_ChargeCap = SafeChargePcap;
     } else {
-        P_ChargeCap = sCAN_RX_data.PowerLimitAfterOffset;
+        P_ChargeCap = sCAN_RX_data.ChargePowerAfterOffset;
     }
 
     Pcap = Vcap * Icap; // 当前电容功率
     PID_Preload_Integral(&sPID_PowerLoop_Charge, Vcap);
     PID_Compute(&sPID_PowerLoop_Charge, Pcap, P_ChargeCap, &PID_PowerLoopOut);
 
-    PID_Preload_Integral(&sPID_buck_V, Vbat);
+    PID_Preload_Integral(&sPID_buck_V, Vcap);
     PID_Compute(&sPID_buck_V, Vcap, SOFTWARE_OVP_VCAP, &PID_VoltageLoopOut);
     Loop_Competition_Buck(PID_PowerLoopOut, PID_VoltageLoopOut, &TIM1_PWM2_Comapre);
 
     // 半桥PWM比较值赋值，设定PWM占空比，这里是以上半桥的正占空比进行设置。
-    htim1.Instance->CCR2 = TIM1_PWM2_Comapre;
+    SET_PWM_COMPARE(TIM1_PWM2_Comapre);
     // ADC采样触发比较值赋值，设定为上半桥开通时间的3/8处
-    htim1.Instance->CCR1 = (TIM1_PWM2_Comapre >> 3) + (TIM1_PWM2_Comapre >> 2);
+    SET_ADC_TRIGGER_COMPARE((TIM1_PWM2_Comapre >> 3) + (TIM1_PWM2_Comapre >> 2));
 
-    TIM1_PWM2_DISBREAK;
-    //充电的时候就一直打开PWM，不需要关闭。
+    // 电容欠压充电的时候，只会有一种情况，电池电流会掉到0.5A以下：
+    // 超级电容欠压充电的时候，突然死掉，底盘断电了
 
-    // 充电的时候，只会有两种情况，电池电流会很小
-    // 一是超级电容充满电了，处于涓流状态
-    // 二是超级电容充电的时候，突然死掉，底盘断电了
-    // 充满电的时候，电流很小，就算把PMOS关掉，使用体二极管进行涓流充电，也不会产生太大的损耗。
-    Hysteresis_Comparator(Ibat ,PMOS_ON_CURRENT ,TRICKLE_CHARGE_CURRENT_CAP , &IbatPMOSOffEdge);
-    if (IbatPMOSOffEdge == FALLING) {
-        PMOS_OffDelay++;
-        if (PMOS_OffDelay >= COUNT_TO_100MS_ON_100Khz) {
-            // 迟滞100ms才会关闭PMOS，防止误关断导致PMOS反复开关
-            // 充电的时候，半桥处于Buck模式，直接关闭PMOS不会有事
-            PMOS_OFF;
-        }
-    }else {
-        PMOS_OffDelay =0;
-        //就算电流变大也不打开PMOS了，只有进去其他环路的时候才会打开PMOS。
-    }
+    // 所以当这种情况下，把半桥关掉，电容就达到了断电的目的
+    Power_Down();
 
     // 清除放电环路的PI参数和状态，让他切换过去的时候会进行积分预加载。
     PID_Clear_Integral(&sPID_PowerLoop_Discharge);
     PID_Clear_Integral(&sPID_boost_V);
-    PID_Clear_Integral(&sPID_boost_I);
 }
 
 uint32_t UVP_CapDelay = 0;
@@ -887,15 +842,15 @@ void Discharge_Loop(void){
 
     // 这个PI运算是防止一直升压的过压保护使用
     PID_Preload_Integral(&sPID_boost_V, Vcap);
-    PID_Compute(&sPID_boost_V, Vbat, SOFTWARE_OVP_VBAT, &PID_VoltageLoopOut);
+    PID_Compute(&sPID_boost_V, Vbat, SOFTWARE_OVP_RECOVER_VBAT, &PID_VoltageLoopOut);
 
     Loop_Competition_Boost(PID_PowerLoopOut, PID_VoltageLoopOut, &TIM1_PWM2_Comapre);
 
     // 这里是防止某些电控逻辑错误导致的超电过充保护。
-    Hysteresis_Comparator(Vcap, SOFTWARE_OVP_VCAP + 1, SOFTWARE_OVP_VCAP - 1, &VcapDischargeOVPEgde);
+    Hysteresis_Comparator(Vcap, SOFTWARE_OVP_VCAP, SOFTWARE_OVP_RECOVER_VCAP, &VcapDischargeOVPEgde);
     if (VcapDischargeOVPEgde == RISING) {
 
-        PID_Preload_Integral(&sPID_buck_V, Vbat);
+        PID_Preload_Integral(&sPID_buck_V, Vcap);
         PID_Compute(&sPID_buck_V, Vcap, SOFTWARE_OVP_VCAP, &PID_VoltageLoopOut);
 
         Loop_Competition_Buck(TIM1_PWM2_Comapre, PID_VoltageLoopOut, &TIM1_PWM2_Comapre);
@@ -904,9 +859,14 @@ void Discharge_Loop(void){
     }
 
     // 半桥PWM比较值赋值，设定PWM占空比，这里是以上半桥的正占空比进行设置。
-    htim1.Instance->CCR2 = TIM1_PWM2_Comapre;
+    SET_PWM_COMPARE(TIM1_PWM2_Comapre);
     // ADC采样触发比较值赋值，设定为上半桥开通时间的3/8处
-    htim1.Instance->CCR1 = (TIM1_PWM2_Comapre >> 3) + (TIM1_PWM2_Comapre >> 2);
+    SET_ADC_TRIGGER_COMPARE((TIM1_PWM2_Comapre >> 3) + (TIM1_PWM2_Comapre >> 2));
+
+    // 放电的时候，只会有一种情况，电池电流会掉到0.5A以下
+    // 也就是：突然死掉，底盘断电了。
+    // 所以当这情况下，把半桥关掉，就可以达到底盘断电的目的。
+    Power_Down();
 
     // 这个if是判断超电什么时候用完电，进入过放保护的
     // 因为超电没电只存在两种情况，一种是第一次上电，另一种是放电的时候放完了
@@ -924,30 +884,6 @@ void Discharge_Loop(void){
     } else if(VcapUVPEdge == RISING) {
         // 不欠压就清零计数，这里是单次持续100ms才会保护，而不是多次累计达到100ms
         UVP_CapDelay = 0;
-    }
-
-    // 放电的时候，只会有一种情况，电池电流会掉到0.5A以下
-    // 也就是：突然死掉，底盘断电了。
-    // 所以当这情况下，把半桥关掉，就可以达到底盘断电的目的。
-    if (Ibat < PMOS_OFF_CURRENT) {
-        PMOS_OffDelay++;
-
-        if (PMOS_OffDelay < COUNT_TO_10MS_ON_100Khz) {
-            // 这里前10MS还要打开是为了防止一些逻辑问题导致运行的时候管子没打开。
-            TIM1_PWM2_DISBREAK;
-            PMOS_ON;
-        } else if (PMOS_OffDelay > COUNT_TO_15MS_ON_100Khz) {
-            // 只有放电的时候才需要关闭半桥，因为放电的时候处于Boost模式，电感续流需要通过PMOS
-            TIM1_PWM2_BREAK;
-        } else if (PMOS_OffDelay >= COUNT_TO_100MS_ON_100Khz) {
-            // PMOS比半桥晚关的原因是，半桥关闭后可能会有电感续流
-            //  如果直接断掉PMOS电感续流会无处可去，会产生一个电压尖峰，可能会导致管子击穿
-            PMOS_OFF;
-        }
-    } else {
-        TIM1_PWM2_DISBREAK;
-        PMOS_ON;
-        PMOS_OffDelay = 0;
     }
 
     // 清除充电环路的PI参数和状态，让他切换过去的时候会进行积分预加载。
@@ -968,31 +904,111 @@ void Discharge_Loop(void){
  * sCAN_TX_data.SuperCapState = 2
  */
 void Wait_Loop(void){
-    TIM1_PWM2_BREAK;
-    PMOS_Off();
+    SuperCap_Disable();
     PID_Clear_Integral(&sPID_buck_V);
     PID_Clear_Integral(&sPID_buck_I);
     PID_Clear_Integral(&sPID_boost_V);
-    PID_Clear_Integral(&sPID_boost_I);
     PID_Clear_Integral(&sPID_PowerLoop_Charge);
     PID_Clear_Integral(&sPID_PowerLoop_Discharge);
+}
+
+uint32_t SuperCapDisableDelay = 0;
+uint32_t SuperCapEnableDelay = 0;
+uint8_t SuperCaoDisableFlag  = 0;
+uint8_t SuperCaoEnableFlag  = 0;
+
+uint8_t SuperCap_Disable(void){
+    //超级电容控制板失能要先关PWM再关PMOS，避免关掉PMOS之后，电感续流无处可去产生电压尖峰，导致MOS击穿。
+    TIM1_PWM2_BREAK;
+    SuperCapEnableDelay = 0;
+    SuperCapDisableDelay++;
+    if(SuperCapDisableDelay > COUNT_TO_100MS_ON_100Khz){
+        PMOS_OFF;
+        SuperCapDisableDelay = 0;
+        return 1; // 失能成功
+    }
+    return 0;
+}
+
+uint8_t SuperCap_Enable(void){
+    //超级电容控制板使能要先开PMOS再开PWM，避免PMOS开关速度过慢导致烧毁。
+    PMOS_ON;
+    SuperCapDisableDelay = 0;
+    SuperCapEnableDelay++;
+    if(SuperCapEnableDelay > COUNT_TO_10MS_ON_100Khz){
+        TIM1_PWM2_DISBREAK;
+        SuperCapEnableDelay = 0;
+        return 1; // 使能成功
+    }
+    return 0;
 }
 
 /**
  * PMOS关闭函数，在除了充电和放电的时候使用，因为充电和放电的时候需要考虑其他因素，所以不能直接使用这条函数来关PMOS
  */
-void PMOS_Off(void){
-    // 因为PMOS导通可能比较慢，所以还是需要在死掉的时候才会关闭PMOS,防止没必要的时候关闭PMOS导致出问题
+
+uint32_t PMOS_OffDelay = 0; //PMOS关断延迟
+uint32_t PMOS_OnDelay = 0; //PWM开通延迟
+uint8_t PMOS_ReOpen =0; //PMOS重新打开
+uint32_t PMOS_ReOpenDelay =0; //PMOS重新打开
+void Power_Down(void){
+
+    //如果PWM处于刹车状态，则PID保持初始状态，避免计算错误导致
+    if(!TIM1_PWM2_IS_OUT){
+        PID_Clear_Integral(&sPID_boost_V);
+        PID_Clear_Integral(&sPID_buck_V);
+        PID_Clear_Integral(&sPID_buck_I);
+        PID_Clear_Integral(&sPID_PowerLoop_Discharge);
+        PID_Clear_Integral(&sPID_PowerLoop_Charge);
+    }
 
     Hysteresis_Comparator(Ibat, PMOS_ON_CURRENT, PMOS_OFF_CURRENT, &IbatPMOSOffEdge);
-    if (IbatPMOSOffEdge == FALLING) {
+    if (IbatPMOSOffEdge == FALLING && PMOS_ReOpen == 0) {
+        PMOS_OnDelay =0;
         PMOS_OffDelay++;
-        if (PMOS_OffDelay > COUNT_TO_100MS_ON_100Khz) {
-            PMOS_OFF;
+        if (PMOS_OffDelay > COUNT_TO_500MS_ON_100Khz) {
+            SuperCaoDisableFlag = SuperCap_Disable();
+
+            if(SuperCaoDisableFlag){
+                // 进这里说明PMOS已经关掉了
+
+                if(PMOS_OffDelay > COUNT_TO_2S_ON_100Khz){
+                    // 延迟2s，判断底盘是否真正断电，如果没断电，则重新打开超电。
+
+                    if(Vbat > SOFTWARE_UVP_BAT){
+                        PMOS_ReOpenDelay ++;
+                        if (PMOS_ReOpenDelay > 10) {
+                            // 延迟100ms * 10，重新打开PMOS，给底盘供电
+                            PMOS_ReOpen = 1;
+                            PMOS_ReOpenDelay = 0;
+                        }
+                    }else {
+                        PMOS_ReOpenDelay = 0;
+                        PMOS_ReOpen = 0;
+                    }
+
+                }
+
+            PID_Clear_Integral(&sPID_boost_V);
+            PID_Clear_Integral(&sPID_buck_V);
+            PID_Clear_Integral(&sPID_buck_I);
+            PID_Clear_Integral(&sPID_PowerLoop_Discharge);
+            PID_Clear_Integral(&sPID_PowerLoop_Charge);
+            }
         }
-    } else if (IbatPMOSOffEdge == RISING) {
-        PMOS_ON;
+    }else if(IbatPMOSOffEdge == RISING || PMOS_ReOpen == 1){
+
+        PMOS_ReOpenDelay = 0; // 避免在上面累加到一半，电流突然变大，下一次进去会保持上一次的值
         PMOS_OffDelay = 0;
+        PMOS_OnDelay++;
+        if (PMOS_OnDelay > COUNT_TO_10MS_ON_100Khz) {
+            SuperCaoEnableFlag = SuperCap_Enable();
+
+            if(SuperCaoEnableFlag){
+                PMOS_ReOpen = 0;
+                PMOS_OnDelay = 0;
+            }
+        }
     }
 }
 
@@ -1004,25 +1020,7 @@ uint32_t LED_Refresh_CNT = 0; // 中间变量，用于同步灯光闪烁
  */
 void LED_Refresh(void){
     LED_Refresh_CNT++;
-    if (sStateBit.CAN_Offline_bit) {
-        // CAN掉线的时候，两个灯同时闪烁
-        if (LED_Refresh_CNT & 1) {
-            LED_CAP_ON;
-            LED_CHASSIS_ON;
-        } else {
-            LED_CAP_OFF;
-            LED_CHASSIS_OFF;
-        }
-    } else if (sStateBit.OTP_CAP_bit || sStateBit.OTP_MOS_bit) {
-        // 过温保护，两个灯交替闪烁
-        if (LED_Refresh_CNT & 1) {
-            LED_CAP_ON;
-            LED_CHASSIS_OFF;
-        } else {
-            LED_CAP_OFF;
-            LED_CHASSIS_ON;
-        }
-    } else if (sStateBit.UVP_Bat_bit) {
+    if (sStateBit.UVP_Bat_bit) {
         // 电池没电的时候，超电关闭，两个灯全部熄灭
         LED_CAP_OFF;
         LED_CHASSIS_OFF;
@@ -1036,6 +1034,24 @@ void LED_Refresh(void){
         // 电容灯灭
         LED_CAP_OFF;
         LED_CHASSIS_BLINK;
+    } else if (sStateBit.OTP_CAP_bit || sStateBit.OTP_MOS_bit) {
+        // 过温保护，两个灯交替闪烁
+        if (LED_Refresh_CNT & 1) {
+            LED_CAP_ON;
+            LED_CHASSIS_OFF;
+        } else {
+            LED_CAP_OFF;
+            LED_CHASSIS_ON;
+        }
+    } else if (sStateBit.CAN_Offline_bit) {
+        // CAN掉线的时候，两个灯同时闪烁
+        if (LED_Refresh_CNT & 1) {
+            LED_CAP_ON;
+            LED_CHASSIS_ON;
+        } else {
+            LED_CAP_OFF;
+            LED_CHASSIS_OFF;
+        }
     } else if (sStateBit.UVP_Cap_bit) {
         // 电容用完电的时候，电容的灯闪烁
         // 底盘灯灭
@@ -1063,6 +1079,8 @@ void LED_Refresh(void){
     }
 }
 
+
+
 /**
  * 过滤器初始化函数
  */
@@ -1071,7 +1089,7 @@ void FDCAN_Filter_Init(void){
     sFilterConfig.FilterIndex  = 0;                       // 过滤器序列0，只配置一个过滤器
     sFilterConfig.FilterType   = FDCAN_FILTER_DUAL;       // 双ID过滤模式，只能接受两个指定ID的数据
     sFilterConfig.FilterConfig = FDCAN_FILTER_TO_RXFIFO0; // 接收的数据保存到FIFO0
-    sFilterConfig.FilterID1    = CAN_C_BOARD_ID;         // ID白名单1
+    sFilterConfig.FilterID1    = CAN_ID_BUS_TO_SUPERCAP;         // ID白名单1
     sFilterConfig.FilterID2    = CAN_TEST_ID;             // ID白名单2
 
     HAL_FDCAN_ConfigFilter(&hfdcan1, &sFilterConfig);
@@ -1088,17 +1106,32 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
     uint8_t CAN_RX_Buff[8];
     HAL_FDCAN_GetRxMessage(&hfdcan1, FDCAN_RX_FIFO0, &sFDCAN1_RxHeader, CAN_RX_Buff); // 接收数据
 
-    // 在这里直接把数据分配到结构体中，方便调用
-    sCAN_RX_data.Enable      = (uint8_t)CAN_RX_Buff[0];
-    sCAN_RX_data.Charge      = (uint8_t)CAN_RX_Buff[1];
-    sCAN_RX_data.PowerLimint = (uint8_t)CAN_RX_Buff[2];
-
-    // 将收到的电控的功率限制进行一个损耗补偿，避免与裁判系统检测出的功率不同而超功率。
-    sCAN_RX_data.PowerLimitAfterOffset = sCAN_RX_data.PowerLimint - PBAT_POWER_LOSS;
-    if (sCAN_RX_data.PowerLimitAfterOffset < 5) sCAN_RX_data.PowerLimitAfterOffset = 5;
-
     // CAN看门狗计数清零，确保CAN在线
     CAN_WDG_Count = 0;
+
+    if(CAN_ReceiveDataRefresh_Flag){
+        //判断数据刷新标志位，限制数据更新速度，避免电控发送动态的数据太快，导致超电环路爆炸
+
+        // 在这里直接把数据分配到结构体中，方便调用
+        sCAN_RX_data.Enable      = CAN_RX_Buff[0];
+        sCAN_RX_data.Charge      = CAN_RX_Buff[1];
+        sCAN_RX_data.PowerLimit = CAN_RX_Buff[2];
+        sCAN_RX_data.ChargePower = CAN_RX_Buff[3];
+
+        if(sCAN_RX_data.ChargePower > sCAN_RX_data.PowerLimit){
+            sCAN_RX_data.PowerLimit = sCAN_RX_data.ChargePower;
+        }
+
+        // 将收到的电控的功率限制进行一个损耗补偿，避免与裁判系统检测出的功率不同而超功率。
+        sCAN_RX_data.PowerLimitAfterOffset = sCAN_RX_data.PowerLimit - PBAT_POWER_LOSS;
+        if (sCAN_RX_data.PowerLimitAfterOffset < 5) sCAN_RX_data.PowerLimitAfterOffset = 5;
+
+        sCAN_RX_data.ChargePowerAfterOffset = sCAN_RX_data.ChargePower - PBAT_POWER_LOSS;
+        if (sCAN_RX_data.ChargePowerAfterOffset < 5) sCAN_RX_data.ChargePowerAfterOffset = 5;
+
+        CAN_ReceiveDataRefresh_Flag = 0;
+    }
+
 }
 
 uint8_t FirstSend = 1;
@@ -1111,7 +1144,7 @@ void Can_SendMess(CAN_TransmitDataTypeDef *TX_temp){
     if (FirstSend) {
         sFDCAN1_TxHeader.BitRateSwitch = FDCAN_BRS_OFF;     // 波特率切换关闭
         sFDCAN1_TxHeader.FDFormat      = FDCAN_CLASSIC_CAN; // 经典CAN
-        sFDCAN1_TxHeader.Identifier    = CAN_SUPERCAP_ID;   // 发送ID
+        sFDCAN1_TxHeader.Identifier    = CAN_ID_SUPERCAP_TO_BUS;   // 发送ID
         sFDCAN1_TxHeader.IdType        = FDCAN_STANDARD_ID; // 标准CANID
         sFDCAN1_TxHeader.DataLength    = FDCAN_DLC_BYTES_8; // 数据长度
         sFDCAN1_TxHeader.TxFrameType   = FDCAN_DATA_FRAME;  // 数据类型
@@ -1124,6 +1157,8 @@ void Can_SendMess(CAN_TransmitDataTypeDef *TX_temp){
     CAN_TX_BUFF[2]         = TX_temp->SuperCapEnergy;
     CAN_TX_BUFF[3]         = TX_temp->ChassisPower;
     CAN_TX_BUFF[4]         = TX_temp->VoltageBat;
+    CAN_TX_BUFF[5]         = TX_temp->DebugOut_BatPower;
+    CAN_TX_BUFF[6]         = TX_temp->DebugOut_SuperCapPower;
 
     HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &sFDCAN1_TxHeader, CAN_TX_BUFF);
 }
@@ -1136,7 +1171,7 @@ void ADC_Curve_Fitting(void){
     LED_CHASSIS_OFF;
     LED_CAP_OFF;
     while(1){
-        for (uint8_t i = 0; i < 10; i++) {
+        for (uint8_t i = 0; i < 50; i++) {
             if (!memcmp((const void *)UID_BASE, &csADC_Fit_Parameters[i], 12)) {
                 sADC_Fit = csADC_Fit_Parameters[i];
                 return;

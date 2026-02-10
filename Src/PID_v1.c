@@ -58,12 +58,18 @@ inline void PID_Preload_Integral(PID_ParameterTypeDef * PID ,float InitialInput)
       //当两边电压不确定的时候，integral正常初始化是0，会导致前几次进入PID时，integral需要多次计算累积，PID会一直输出较小的值，导致半桥开关的升降压比与实际电压比不同，就会爆炸
       //所以首次进入PID计算的时候，我们需要初始化他的Integral，使首次PID计算的输出值作用于占空比的时候，让占空比约为输出输入占空比
       //0.04是默认电池电压为25V，乘法以提高速度，有一点误差影响不是很大
-      PID->Integral = InitialInput *PID->OutMax *0.04f;
+
+      if(PID->ControllerDirection == DIRECT){
+         PID->Integral = InitialInput *PID->OutMax *0.04f;
+      }else if( PID->ControllerDirection == REVERSE){
+         PID->Integral = PID->OutMax -  InitialInput *PID->OutMax *0.04f;
+      }
       if(PID->Integral > PID->OutMax) PID->Integral = PID->OutMax;
       else if(PID->Integral < PID->OutMin) PID->Integral = PID->OutMin;
       PID->FirstCompute =0;
    }
 }
+
 
 //清除PID的积分，使其下一次进入的时候进行一次预加载。
 inline void PID_Clear_Integral(PID_ParameterTypeDef * PID){
