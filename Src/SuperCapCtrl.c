@@ -398,10 +398,11 @@ void Soft_Start_Loop(void){
     // 如果Ibat小于(Pcap / 25V /2 )A 持续超过1S，则说明电池电流检测电路与电容电流检测电路的数值差异过大，判断为硬件故障，进入BOOM保护。
     if(Ibat < 0.02f * Vcap * Icap){
         IbatCheckCount++;
-        if(IbatCheckCount > COUNT_TO_100MS_ON_100Khz){
-            SoftStartOutDelay = 0;
-        }else if(IbatCheckCount > COUNT_TO_1S_ON_100Khz){
+        if(IbatCheckCount > COUNT_TO_1S_ON_100Khz){
+            sStateBit.SoftStart_bit = 0;
             sStateBit.BOOM_bit = 1;
+        }else if(IbatCheckCount > COUNT_TO_100MS_ON_100Khz){
+            SoftStartOutDelay = 0;
         }
     }else if (Vcap > SAFE_CHARGE_VCAP){
         SoftStartOutDelay++;
@@ -1028,8 +1029,8 @@ void LED_Refresh(void){
     }
 #else
 
-    if(LED_Refresh_CNT < 50){
-        // 这是初始化，会跑马灯五次
+    if(sStateBit.SoftStart_bit){
+        // 这是初始化，会跑马灯
         if ((LED_Refresh_CNT & DIV4) == 0){
             LED_RED_OFF;
             LED_GREEN_OFF;
@@ -1047,97 +1048,95 @@ void LED_Refresh(void){
             LED_GREEN_OFF;
             LED_BLUE_ON;
         }
-    }else {
-        if (sStateBit.UVP_Bat_bit) {
-            // 电池没电的时候，红灯常亮，绿、蓝熄灭
+    }else if (sStateBit.UVP_Bat_bit) {
+        // 电池没电的时候，红灯常亮，绿、蓝熄灭
+        LED_RED_ON;
+        LED_GREEN_OFF;
+        LED_BLUE_BLINK;
+    }else if (sStateBit.OTP_CAP_bit || sStateBit.OTP_MOS_bit) {
+        // 过温保护，红灯常亮，蓝绿灯交替闪烁
+        LED_RED_ON;
+        if (LED_Refresh_CNT & 1) {
+            LED_GREEN_ON;
+            LED_BLUE_OFF;
+        } else {
+            LED_GREEN_OFF;
+            LED_BLUE_ON;
+        }
+    } else if(sStateBit.BOOM_bit){
+        //这里是爆炸，保险丝熔断了，红、绿、蓝常亮
+        LED_RED_ON;
+        LED_GREEN_ON;
+        LED_BLUE_ON;
+    } else if (sStateBit.OCP_bit) {
+        // 母线过流的时候，红灯闪烁，绿灯常亮，蓝灯闪烁
+        if (LED_Refresh_CNT & 1) {
+            LED_RED_ON;
+            LED_GREEN_ON;
+            LED_BLUE_ON;
+        } else {
+            LED_RED_OFF;
+            LED_GREEN_ON;
+            LED_BLUE_OFF;
+        }
+    } else if (sStateBit.OVP_Bat_bit) {
+        // 动能回收母线过压的时候：红灯闪烁，绿灯熄灭，蓝灯闪烁
+        if (LED_Refresh_CNT & 1) {
             LED_RED_ON;
             LED_GREEN_OFF;
-            LED_BLUE_BLINK;
-        }else if (sStateBit.OTP_CAP_bit || sStateBit.OTP_MOS_bit) {
-            // 过温保护，红灯常亮，蓝绿灯交替闪烁
-            LED_RED_ON;
-            if (LED_Refresh_CNT & 1) {
-                LED_GREEN_ON;
-                LED_BLUE_OFF;
-            } else {
-                LED_GREEN_OFF;
-                LED_BLUE_ON;
-            }
-        } else if(sStateBit.BOOM_bit){
-            //这里是爆炸，保险丝熔断了，红、绿、蓝常亮
+            LED_BLUE_ON;
+        } else {
+            LED_RED_OFF;
+            LED_GREEN_OFF;
+            LED_BLUE_OFF;
+        }
+    } else if (sStateBit.CAN_Offline_bit) {
+        // CAN掉线的时候，红、绿、蓝同时闪烁
+        if (LED_Refresh_CNT & 1) {
             LED_RED_ON;
             LED_GREEN_ON;
             LED_BLUE_ON;
-        } else if (sStateBit.OCP_bit) {
-            // 母线过流的时候，红灯闪烁，绿灯常亮，蓝灯闪烁
-            if (LED_Refresh_CNT & 1) {
-                LED_RED_ON;
-                LED_GREEN_ON;
-                LED_BLUE_ON;
-            } else {
-                LED_RED_OFF;
-                LED_GREEN_ON;
-                LED_BLUE_OFF;
-            }
-        } else if (sStateBit.OVP_Bat_bit) {
-            // 动能回收母线过压的时候：红灯闪烁，绿灯熄灭，蓝灯闪烁
-            if (LED_Refresh_CNT & 1) {
-                LED_RED_ON;
-                LED_GREEN_OFF;
-                LED_BLUE_ON;
-            } else {
-                LED_RED_OFF;
-                LED_GREEN_OFF;
-                LED_BLUE_OFF;
-            }
-        } else if (sStateBit.CAN_Offline_bit) {
-            // CAN掉线的时候，红、绿、蓝同时闪烁
-            if (LED_Refresh_CNT & 1) {
-                LED_RED_ON;
-                LED_GREEN_ON;
-                LED_BLUE_ON;
-            } else {
-                LED_RED_OFF;
-                LED_GREEN_OFF;
-                LED_BLUE_OFF;
-            }
-        } else if(sStateBit.Enable_bit == DISABLE){
-            // 超级电容模组不使能，红灯熄灭，绿、蓝交替闪烁
-            LED_RED_OFF;            
-            if (LED_Refresh_CNT & 1) {
-                LED_GREEN_ON;
-                LED_BLUE_OFF;
-            } else {
-                LED_GREEN_OFF;
-                LED_BLUE_ON;
-            }
-        }else if (sStateBit.UVP_Cap_bit) {
-            // 电容用完电的时候，红灯闪烁，绿灯闪烁，蓝灯熄灭
-            if (LED_Refresh_CNT & 1) {
-                LED_RED_ON;
-                LED_GREEN_ON;
-                LED_BLUE_OFF;
-            } else {
-                LED_RED_OFF;
-                LED_GREEN_OFF;
-                LED_BLUE_OFF;
-            }
-        } else if (SuperCapEnergy_AVG >= 95) {
-            // 充满电的时候，红灯熄灭，绿、蓝常亮
+        } else {
             LED_RED_OFF;
+            LED_GREEN_OFF;
+            LED_BLUE_OFF;
+        }
+    } else if(sStateBit.Enable_bit == DISABLE){
+        // 超级电容模组不使能，红灯熄灭，绿、蓝交替闪烁
+        LED_RED_OFF;            
+        if (LED_Refresh_CNT & 1) {
             LED_GREEN_ON;
+            LED_BLUE_OFF;
+        } else {
+            LED_GREEN_OFF;
             LED_BLUE_ON;
-        }else if (sCAN_TX_data.SuperCapReady) {
+        }
+    }else if (sStateBit.UVP_Cap_bit) {
+        // 电容用完电的时候，红灯闪烁，绿灯闪烁，蓝灯熄灭
+        if (LED_Refresh_CNT & 1) {
+            LED_RED_ON;
+            LED_GREEN_ON;
+            LED_BLUE_OFF;
+        } else {
             LED_RED_OFF;
-            if (sStateBit.Charge_bit) {
-                // 充电的时候：红灯熄灭，绿灯常亮，蓝灯熄灭
-                LED_GREEN_ON;
-                LED_BLUE_OFF;
-            } else if (!sStateBit.Charge_bit) {
-                // 放电的时候：红灯熄灭，绿灯熄灭，蓝灯常亮
-                LED_GREEN_OFF;
-                LED_BLUE_ON;
-            }
+            LED_GREEN_OFF;
+            LED_BLUE_OFF;
+        }
+    } else if (SuperCapEnergy_AVG >= 95) {
+        // 充满电的时候，红灯熄灭，绿、蓝常亮
+        LED_RED_OFF;
+        LED_GREEN_ON;
+        LED_BLUE_ON;
+    }else if (sCAN_TX_data.SuperCapReady) {
+        LED_RED_OFF;
+        if (sStateBit.Charge_bit) {
+            // 充电的时候：红灯熄灭，绿灯常亮，蓝灯熄灭
+            LED_GREEN_ON;
+            LED_BLUE_OFF;
+        } else if (!sStateBit.Charge_bit) {
+            // 放电的时候：红灯熄灭，绿灯熄灭，蓝灯常亮
+            LED_GREEN_OFF;
+            LED_BLUE_ON;
         }
     }
 

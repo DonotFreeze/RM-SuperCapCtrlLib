@@ -276,7 +276,7 @@ typedef struct {
 #define CAN_OFFLINE_STAY  //CAN离线时，超级电容控制板状态保持
 // #define CAN_OFFLINT_STOP //CAN离线时，超级电容控制板停止运行
 
-#define DEBUG_MODE
+// #define DEBUG_MODE
 //测试模式，正式使用请勿开启（注释掉）
 //测试模式是在不装车的情况下用的，开启测试模式之后，CAN只发不收
 //开启测试模式之后，超级电容控制板的灯效会一直以“CAN离线”的状态进行显示
