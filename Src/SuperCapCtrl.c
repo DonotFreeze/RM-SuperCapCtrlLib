@@ -54,7 +54,8 @@ static AnomalyDetectionTypeDef sOCPbatAnomalyConfig = {0};
 static AnomalyDetectionTypeDef sOVPbatAnomalyConfig = {0};
 static AnomalyDetectionTypeDef sUVPbatAnomalyConfig = {0};
 
-static AnomalyDetectionTypeDef sOCPcapAnomalyConfig = {0};
+static AnomalyDetectionTypeDef sCharge_OCPcapAnomalyConfig = {0};
+static AnomalyDetectionTypeDef sDischarge_OCPcapAnomalyConfig = {0};
 
 static AnomalyDetectionTypeDef sOTPmosAnomalyConfig = {0};
 static AnomalyDetectionTypeDef sOTPcapAnomalyConfig = {0};
@@ -258,8 +259,10 @@ void State_Change(void){
     if (CAN_WDG_Counter > COUNT_TO_1S_ON_100Khz) sStateBit.CAN_Offline_bit = 1;
 #endif
 
+    //电容、电池过流都归为过流保护
     Anomaly_Detection(&sOCPbatAnomalyConfig, Ibat, &sStateBit.OCP_bit);
-    Anomaly_Detection(&sOCPcapAnomalyConfig, Icap, &sStateBit.OCP_bit);
+    Anomaly_Detection(&sCharge_OCPcapAnomalyConfig, Icap, &sStateBit.OCP_bit);
+    Anomaly_Detection(&sDischarge_OCPcapAnomalyConfig, Icap, &sStateBit.OCP_bit);
 
     Anomaly_Detection(&sOVPbatAnomalyConfig, Vbat, &sStateBit.OVP_Bat_bit);
     Anomaly_Detection(&sUVPbatAnomalyConfig, Vbat, &sStateBit.UVP_Bat_bit);
@@ -343,6 +346,7 @@ void Power_Loop(){
 ------------------------------------------------------------------------------------------------------------------------------------------
 */
 static uint32_t SoftStartOutDelay = 0; // 退出软启动计数
+static uint32_t IbatCheckCount = 0; // 软起动过程中检测电池电流的计数
 /**
  * 缓启动保护，每次上电必须执行。
  * sStateBit.SoftStart_bit =1
@@ -390,9 +394,18 @@ void Soft_Start_Loop(void){
         PID_Clear_Integral(&sPID_AutomaticCompensation);
     }
 
-    // 第一次上电的时候需要充电到5V以上才会退出缓启动，然后进入欠压保护，如果此时电压大于10V，则直接可以运行。
-    if (Vcap > SAFE_CHARGE_VCAP){
+    // 上电的时候需要充电到5V以上才会退出缓启动，然后进入欠压保护，如果此时电压大于10V，则直接可以运行，无需进入欠压保护。
+    // 如果Ibat小于(Pcap / 25V /2 )A 持续超过1S，则说明电池电流检测电路与电容电流检测电路的数值差异过大，判断为硬件故障，进入BOOM保护。
+    if(Ibat < 0.02f * Vcap * Icap){
+        IbatCheckCount++;
+        if(IbatCheckCount > COUNT_TO_100MS_ON_100Khz){
+            SoftStartOutDelay = 0;
+        }else if(IbatCheckCount > COUNT_TO_1S_ON_100Khz){
+            sStateBit.BOOM_bit = 1;
+        }
+    }else if (Vcap > SAFE_CHARGE_VCAP){
         SoftStartOutDelay++;
+        IbatCheckCount = 0;
         if (SoftStartOutDelay >= COUNT_TO_1S_ON_100Khz) {
             sStateBit.SoftStart_bit = 0;
             sStateBit.UVP_Cap_bit   = 0;
@@ -400,6 +413,7 @@ void Soft_Start_Loop(void){
         }
     }else if (Vcap > SOFTSTART_CHARGE_VCAP) {
         SoftStartOutDelay++;
+        IbatCheckCount = 0;
         if (SoftStartOutDelay >= COUNT_TO_1S_ON_100Khz) {
             sStateBit.SoftStart_bit = 0;
             sStateBit.UVP_Cap_bit   = 1;
@@ -407,6 +421,7 @@ void Soft_Start_Loop(void){
         }
     } else {
         SoftStartOutDelay = 0;
+        IbatCheckCount = 0;
     }
 }
 
@@ -461,7 +476,7 @@ void Over_Current_Protection_Loop(void){
     PID_Clear_Integral(&sPID_AutomaticCompensation);
 
     // 电流恢复正常之后5s解除保护
-    if ((Ibat < (SOFTWARE_OCP_IBAT - 2)) && (Icap < (SOFTWARE_CHARGE_OCP_ICAP - 2)) && (Icap > (SOFTWARE_DISCHARGE_OCP_ICAP + 2))) {
+    if ((Ibat < SOFTWARE_OCP_RECOVER_IBAT) && (Icap < SOFTWARE_CHARGE_OCP_RECOVER_ICAP) && (Icap > SOFTWARE_DISCHARGE_OCP_RECOVER_ICAP)) {
         OCP_RecoverDelay++;
         if (OCP_RecoverDelay >= COUNT_TO_5S_ON_100Khz) {
             sStateBit.OCP_bit = 0;
@@ -1261,11 +1276,17 @@ void Protection_Init(void){
     sOCPbatAnomalyConfig.Timeout = COUNT_TO_200MS_ON_100Khz;
     Anomaly_Detection_Init(&sOCPbatAnomalyConfig);
     
-    sOCPcapAnomalyConfig.SchmittTriggerDirection = RISING;
-    sOCPcapAnomalyConfig.RisingThreshold = SOFTWARE_CHARGE_OCP_ICAP;
-    sOCPcapAnomalyConfig.FallingThreshold = SOFTWARE_CHARGE_OCP_RECOVER_ICAP;
-    sOCPcapAnomalyConfig.Timeout = COUNT_TO_200MS_ON_100Khz;
-    Anomaly_Detection_Init(&sOCPcapAnomalyConfig);
+    sCharge_OCPcapAnomalyConfig.SchmittTriggerDirection = RISING;
+    sCharge_OCPcapAnomalyConfig.RisingThreshold = SOFTWARE_CHARGE_OCP_ICAP;
+    sCharge_OCPcapAnomalyConfig.FallingThreshold = SOFTWARE_CHARGE_OCP_RECOVER_ICAP;
+    sCharge_OCPcapAnomalyConfig.Timeout = COUNT_TO_200MS_ON_100Khz;
+    Anomaly_Detection_Init(&sCharge_OCPcapAnomalyConfig);
+    
+    sDischarge_OCPcapAnomalyConfig.SchmittTriggerDirection = FALLING;
+    sDischarge_OCPcapAnomalyConfig.RisingThreshold = SOFTWARE_DISCHARGE_OCP_ICAP;
+    sDischarge_OCPcapAnomalyConfig.FallingThreshold = SOFTWARE_DISCHARGE_OCP_RECOVER_ICAP;
+    sDischarge_OCPcapAnomalyConfig.Timeout = COUNT_TO_500MS_ON_100Khz;
+    Anomaly_Detection_Init(&sDischarge_OCPcapAnomalyConfig);
 
     sOVPbatAnomalyConfig.SchmittTriggerDirection = RISING;
     sOVPbatAnomalyConfig.RisingThreshold = SOFTWARE_OVP_VBAT;

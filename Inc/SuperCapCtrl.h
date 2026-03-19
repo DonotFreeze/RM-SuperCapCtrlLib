@@ -276,7 +276,7 @@ typedef struct {
 #define CAN_OFFLINE_STAY  //CAN离线时，超级电容控制板状态保持
 // #define CAN_OFFLINT_STOP //CAN离线时，超级电容控制板停止运行
 
-// #define DEBUG_MODE
+#define DEBUG_MODE
 //测试模式，正式使用请勿开启（注释掉）
 //测试模式是在不装车的情况下用的，开启测试模式之后，CAN只发不收
 //开启测试模式之后，超级电容控制板的灯效会一直以“CAN离线”的状态进行显示
@@ -304,8 +304,8 @@ typedef struct {
 #define SOFTWARE_CHARGE_OCP_ICAP 15 //电容组最大充电电流，电容组过流保护
 #define SOFTWARE_CHARGE_OCP_RECOVER_ICAP 13 //电容组保护恢复阈值，必须比上面的数值小
 
-#define SOFTWARE_DISCHARGE_OCP_ICAP -20 //电容组最大放电电流，电容组过流保护
-#define SOFTWARE_DISCHARGE_OCP_RECOVER_ICAP -18 //电容组过流保护恢复阈值，必须比上面的数值小（电流是矢量，所以-18比-20小）
+#define SOFTWARE_DISCHARGE_OCP_ICAP -35 //电容组最大放电电流，电容组过流保护
+#define SOFTWARE_DISCHARGE_OCP_RECOVER_ICAP -30 //电容组过流保护恢复阈值，必须比上面的数值小（电流是矢量，所以-18比-20小）
 
 #define SOFTWARE_OTP_MOS 100 //MOS过温保护。PCB板子耐温度高一点，不会有事
 #define SOFTWARE_OTP_RECOVER_MOS 80 //MOS过温保护恢复阈值，必须比上面的数值小
